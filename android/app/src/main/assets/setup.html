@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  html, body { margin: 0; height: 100%; background: #0e1116; color: #fff;
+    font-family: Arial, Helvetica, sans-serif; }
+  .wrap { height: 100%; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; text-align: center; padding: 0 40px; }
+  h1 { font-size: 56px; margin: 0 0 10px 0; }
+  p { font-size: 24px; color: #9aa4b2; margin: 8px 0; }
+  input { font-size: 40px; padding: 14px 20px; width: 520px; max-width: 90%; text-align: center;
+    background: #171b22; color: #fff; border: 3px solid #262d39; border-radius: 12px; outline: none;
+    margin-top: 24px; }
+  input:focus { border-color: #4f8cff; }
+  button { font-size: 34px; padding: 14px 44px; margin-top: 24px; background: #4f8cff; color: #fff;
+    border: 3px solid #4f8cff; border-radius: 12px; outline: none; }
+  button:focus { border-color: #fff; }
+  #err { color: #e5534b; font-size: 26px; min-height: 34px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>TV Cast</h1>
+  <p>Digite o IP do PC (aparece no painel do PC)</p>
+  <div id="err"></div>
+  <input id="ip" type="text" placeholder="192.168.0.10" autofocus>
+  <button id="go">Conectar</button>
+  <p id="hint" style="font-size:20px;margin-top:30px">Dica: VOLTAR na projeção traz esta tela de volta.</p>
+</div>
+<script>
+  var ipEl = document.getElementById('ip');
+  var err = document.getElementById('err');
+  var timer = null;
+  try { ipEl.value = Android.getIp(); } catch (e) {}
+
+  function go() {
+    var v = ipEl.value.trim();
+    if (!v) { err.textContent = 'Digite o IP primeiro.'; return; }
+    clearTimeout(timer);
+    try { Android.connect(v); } catch (e) {}
+  }
+  document.getElementById('go').onclick = go;
+  ipEl.addEventListener('keydown', function (e) {
+    clearTimeout(timer);
+    if (e.keyCode === 13) go();
+  });
+
+  // Volta de uma falha: tenta de novo sozinho a cada 5s (se já havia um IP salvo).
+  if (location.search.indexOf('err=1') >= 0) {
+    err.textContent = 'Não achei o PC. Tentando de novo em 5s...';
+    if (ipEl.value) timer = setTimeout(go, 5000);
+  }
+</script>
+</body>
+</html>

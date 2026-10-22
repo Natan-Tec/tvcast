@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TV Cast - Painel</title>
+<style>
+  :root { --bg:#0e1116; --card:#171b22; --line:#262d39; --txt:#e8ecf2; --mut:#8b95a5;
+          --acc:#4f8cff; --ok:#33c27f; --bad:#e5534b; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+         font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:16px 24px;
+           border-bottom:1px solid var(--line); }
+  header h1 { font-size:20px; margin:0; margin-right:auto; }
+  .pill { padding:6px 12px; border-radius:999px; font-size:13px; background:var(--card);
+          border:1px solid var(--line); }
+  .pill b { display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--bad);
+            margin-right:7px; }
+  .pill.on b { background:var(--ok); }
+  main { max-width:1100px; margin:0 auto; padding:20px 24px 60px; }
+  .now { display:flex; flex-wrap:wrap; align-items:center; gap:12px; background:var(--card);
+         border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:18px; }
+  .now .t { flex:1; min-width:200px; }
+  .now small { color:var(--mut); display:block; font-size:12px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h2 { font-size:15px; margin:0 0 4px; }
+  .card p { margin:0 0 12px; color:var(--mut); font-size:13px; }
+  .list { display:flex; flex-direction:column; gap:6px; max-height:260px; overflow:auto; }
+  button, select { font:inherit; color:var(--txt); background:#212836; border:1px solid var(--line);
+         border-radius:8px; padding:9px 12px; cursor:pointer; text-align:left; }
+  button:hover { border-color:var(--acc); }
+  button.primary { background:var(--acc); border-color:var(--acc); color:#fff; text-align:center; }
+  button.danger { background:var(--bad); border-color:var(--bad); color:#fff; text-align:center; }
+  button.active { border-color:var(--ok); box-shadow:0 0 0 1px var(--ok) inset; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .empty { color:var(--mut); font-size:13px; }
+  #vc { display:none; margin-top:16px; }
+  #vc.show { display:block; }
+  input[type=range] { flex:1; min-width:160px; accent-color:var(--acc); }
+  .time { font-variant-numeric:tabular-nums; color:var(--mut); font-size:13px; min-width:100px; }
+  #toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:#2b3342;
+           border:1px solid var(--line); padding:10px 16px; border-radius:10px; display:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📺 TV Cast</h1>
+  <span class="pill" id="addr">IP da TV: ...</span>
+  <span class="pill" id="pill"><b></b><span id="pillText">Sem TV conectada</span></span>
+</header>
+<main>
+  <div class="now">
+    <div class="t"><small>Projetando agora</small><span id="nowText">Nada (TV em espera)</span></div>
+    <label class="row"><small style="margin:0">Qualidade da tela</small>
+      <select id="quality">
+        <option value="leve">Leve (960px)</option>
+        <option value="normal">Normal (1280px)</option>
+        <option value="alta">Alta (1920px)</option>
+      </select>
+    </label>
+    <button class="danger" id="stop">Parar projeção</button>
+  </div>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Tela inteira</h2>
+      <p>Espelha um monitor do PC na TV.</p>
+      <div class="list" id="monitors"><span class="empty">Carregando...</span></div>
+    </section>
+
+    <section class="card">
+      <h2>Janela</h2>
+      <p>Projeta só uma janela. Ela é trazida para a frente.</p>
+      <div class="row" style="margin-bottom:8px"><button id="refresh">↻ Atualizar lista</button></div>
+      <div class="list" id="windows"><span class="empty">Carregando...</span></div>
+    </section>
+
+    <section class="card">
+      <h2>Vídeo</h2>
+      <p>Toca um arquivo do PC direto na TV (MP4 H.264 ou WebM).</p>
+      <button class="primary" id="pickVideo">Escolher vídeo...</button>
+    </section>
+
+    <section class="card">
+      <h2>Imagem</h2>
+      <p>Mostra uma foto ou imagem na TV.</p>
+      <button class="primary" id="pickImage">Escolher imagem...</button>
+    </section>
+
+    <section class="card">
+      <h2>Pasta "media"</h2>
+      <p id="mediaFolder">Atalho para arquivos que você deixar nessa pasta.</p>
+      <div class="list" id="media"><span class="empty">Nenhum arquivo.</span></div>
+    </section>
+  </div>
+
+  <section class="card" id="vc">
+    <h2>Controle do vídeo</h2>
+    <div class="row" style="margin-top:10px">
+      <button id="bBack">⏪ 10s</button>
+      <button id="bPlay" class="primary" style="min-width:110px">⏯ Play/Pausa</button>
+      <button id="bFwd">10s ⏩</button>
+      <input type="range" id="seek" min="0" max="1000" value="0">
+      <span class="time" id="time">0:00 / 0:00</span>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <span class="time">Volume</span>
+      <input type="range" id="vol" min="0" max="100" value="100">
+      <button id="bMute">🔇 Mudo</button>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script>
+var $ = function (s) { return document.querySelector(s); };
+var st = { mode: 'blank', name: '', progress: {} };
+var seeking = false, ws = null, toastTimer = null;
+
+function api(path, body) {
+  return fetch(path, {
+    method: body ? 'POST' : 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined
+  }).then(function (r) { return r.json(); });
+}
+function toast(t) {
+  var el = $('#toast'); el.textContent = t; el.style.display = 'block';
+  clearTimeout(toastTimer); toastTimer = setTimeout(function () { el.style.display = 'none'; }, 5000);
+}
+function fmt(s) {
+  s = Math.max(0, Math.floor(s || 0));
+  var m = Math.floor(s / 60), r = s % 60;
+  return m + ':' + (r < 10 ? '0' : '') + r;
+}
+function show(body) {
+  api('/api/show', body).then(function (r) { if (!r.ok) toast(r.error || 'Erro'); });
+}
+function ctrl(action, value) { api('/api/control', { action: action, value: value }); }
+
+function btn(text, onclick) {
+  var b = document.createElement('button');
+  b.textContent = text; b.onclick = onclick; return b;
+}
+function fill(el, items, emptyText) {
+  el.innerHTML = '';
+  if (!items.length) { var s = document.createElement('span'); s.className = 'empty'; s.textContent = emptyText; el.appendChild(s); return; }
+  items.forEach(function (b) { el.appendChild(b); });
+}
+
+function loadSources() {
+  api('/api/sources').then(function (d) {
+    fill($('#monitors'), d.monitors.map(function (m) {
+      return btn('🖥 ' + m.label, function () { show({ mode: 'screen', monitor: m.id, title: m.label }); });
+    }), 'Nenhum monitor encontrado.');
+    fill($('#windows'), d.windows.map(function (w) {
+      return btn(w.title, function () { show({ mode: 'window', id: w.id, title: w.title }); });
+    }), 'Nenhuma janela encontrada (no Linux instale o wmctrl).');
+  });
+}
+function loadMedia() {
+  api('/api/media').then(function (d) {
+    $('#mediaFolder').textContent = 'Pasta: ' + d.folder;
+    fill($('#media'), d.items.map(function (i) {
+      return btn((i.kind === 'video' ? '🎬 ' : '🖼 ') + i.name, function () { show({ mode: 'file', path: i.path }); });
+    }), 'Nenhum arquivo nessa pasta.');
+  });
+}
+function pick(kind) {
+  toast('Abrindo seletor de arquivos no PC...');
+  api('/api/pick', { kind: kind }).then(function (r) {
+    if (r.path) show({ mode: 'file', path: r.path });
+  });
+}
+
+function render() {
+  var on = st.tv > 0;
+  $('#pill').className = 'pill' + (on ? ' on' : '');
+  $('#pillText').textContent = on ? (st.tv > 1 ? st.tv + ' TVs conectadas' : 'TV conectada') : 'Sem TV conectada';
+  var labels = { blank: 'Nada (TV em espera)', screen: 'Tela: ', window: 'Janela: ', video: 'Vídeo: ', image: 'Imagem: ' };
+  $('#nowText').textContent = st.mode === 'blank' ? labels.blank : labels[st.mode] + st.name;
+  if (document.activeElement !== $('#quality')) $('#quality').value = st.quality || 'normal';
+  $('#vc').className = st.mode === 'video' ? 'show' : '';
+  var p = st.progress || {};
+  if (st.mode === 'video' && p.d !== undefined) {
+    $('#time').textContent = fmt(p.t) + ' / ' + fmt(p.d);
+    if (!seeking && p.d) $('#seek').value = Math.round((p.t / p.d) * 1000);
+    $('#bPlay').textContent = p.paused ? '▶ Play' : '⏸ Pausar';
+  }
+}
+
+function connect() {
+  ws = new WebSocket('ws://' + location.host + '/ws?role=panel');
+  ws.onmessage = function (e) {
+    var d = JSON.parse(e.data);
+    if (d.type === 'status') { st = d; render(); }
+    else if (d.type === 'toast') toast(d.text);
+  };
+  ws.onclose = function () { setTimeout(connect, 1500); };
+}
+
+$('#refresh').onclick = loadSources;
+$('#stop').onclick = function () { show({ mode: 'blank' }); };
+$('#pickVideo').onclick = function () { pick('video'); };
+$('#pickImage').onclick = function () { pick('image'); };
+$('#quality').onchange = function () { api('/api/quality', { preset: this.value }); };
+$('#bPlay').onclick = function () { ctrl('toggle'); };
+$('#bBack').onclick = function () { ctrl('skip', -10); };
+$('#bFwd').onclick = function () { ctrl('skip', 10); };
+$('#bMute').onclick = function () { ctrl('mute'); };
+$('#vol').oninput = function () { ctrl('volume', this.value / 100); };
+$('#seek').onmousedown = function () { seeking = true; };
+$('#seek').onchange = function () {
+  var d = (st.progress && st.progress.d) || 0;
+  ctrl('seek', (this.value / 1000) * d);
+  seeking = false;
+};
+
+api('/api/info').then(function (d) { $('#addr').textContent = 'Na TV digite: ' + d.ip + ':' + d.port; });
+loadSources(); loadMedia(); connect();
+setInterval(loadMedia, 15000);
+</script>
+</body>
+</html>
