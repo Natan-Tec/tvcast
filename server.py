@@ -44,6 +44,7 @@ state = {
     "file_id": None,
     "rev": 0,
     "quality": "normal",
+    "bg": None,            # {"file_id", "name", "muted"}: vídeo de fundo em loop
 }
 FILES = {}                 # id -> Path (só o que foi escolhido no painel é servido)
 clients = {"tv": set(), "panel": set()}
@@ -70,6 +71,7 @@ if IS_WIN:
     user32.EnumWindows.argtypes = [WNDENUMPROC, wintypes.LPARAM]
     user32.IsWindowVisible.argtypes = [wintypes.HWND]
     user32.IsIconic.argtypes = [wintypes.HWND]
+    user32.IsWindow.argtypes = [wintypes.HWND]
     user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
     user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
     user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
@@ -137,6 +139,15 @@ def window_rect(wid):
     except Exception:
         pass
     return None
+
+
+def window_exists(wid):
+    try:
+        if IS_WIN:
+            return bool(user32.IsWindow(int(wid)))
+        return any(str(w["id"]) == str(wid) for w in list_windows())
+    except Exception:
+        return True
 
 
 def focus_window(wid):
@@ -251,7 +262,15 @@ def tv_state():
         s["url"] = f"/stream?r={state['rev']}"
     elif m in ("video", "image") and state["file_id"] in FILES:
         s["url"] = f"/file/{state['file_id']}/{quote(FILES[state['file_id']].name)}"
+    s["bg"] = bg_payload()
     return s
+
+
+def bg_payload():
+    b = state["bg"]
+    if not b or b["file_id"] not in FILES:
+        return None
+    return {"url": f"/file/{b['file_id']}/{quote(FILES[b['file_id']].name)}", "muted": b["muted"]}
 
 
 async def broadcast(role, payload):
@@ -270,6 +289,8 @@ async def push_status():
         "name": state["name"],
         "quality": state["quality"],
         "progress": progress,
+        "bg_name": state["bg"]["name"] if state["bg"] else "",
+        "bg_muted": state["bg"]["muted"] if state["bg"] else True,
     })
 
 
@@ -468,6 +489,59 @@ async def api_control(request):
     return web.json_response({"ok": True})
 
 
+async def api_bg(request):
+    """Vídeo de fundo em loop: fica por baixo; pausa quando algo é projetado."""
+    d = await request.json()
+    act = d.get("action")
+    if act == "set":
+        path = Path(str(d.get("path", "")))
+        if not path.is_file() or path.suffix.lower() not in VIDEO_EXT:
+            return web.json_response({"ok": False, "error": "Escolha um arquivo de vídeo."}, status=400)
+        fid = uuid.uuid4().hex[:10]
+        FILES[fid] = path
+        state["bg"] = {"file_id": fid, "name": path.name, "muted": bool(d.get("muted", True))}
+    elif act == "clear":
+        state["bg"] = None
+    elif act == "muted" and state["bg"]:
+        state["bg"]["muted"] = bool(d.get("value"))
+    await broadcast("tv", {"type": "bg", "bg": bg_payload()})
+    await push_status()
+    return web.json_response({"ok": True})
+
+
+async def window_watch():
+    """Se a janela projetada fechar, volta para o fundo (ou espera)."""
+    loop = asyncio.get_running_loop()
+    misses = 0
+    while True:
+        await asyncio.sleep(1)
+        try:
+            if state["mode"] != "window":
+                misses = 0
+                continue
+            ok = await loop.run_in_executor(None, window_exists, state["source"].get("id"))
+            misses = 0 if ok else misses + 1
+            if misses >= 2:
+                misses = 0
+                state.update(mode="blank", source={}, name="", file_id=None)
+                state["rev"] += 1
+                progress.clear()
+                await push_state()
+                await broadcast("panel", {"type": "toast", "text": "A janela foi fechada."})
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            print("Erro ao vigiar a janela:", e)
+
+
+async def _start_watch(app):
+    app["watch"] = asyncio.create_task(window_watch())
+
+
+async def _stop_watch(app):
+    app["watch"].cancel()
+
+
 async def api_quality(request):
     d = await request.json()
     if d.get("preset") in PRESETS:
@@ -478,6 +552,8 @@ async def api_quality(request):
 
 def make_app():
     app = web.Application(middlewares=[guard], client_max_size=1024 ** 2)
+    app.on_startup.append(_start_watch)
+    app.on_cleanup.append(_stop_watch)
     app.add_routes([
         web.get("/", page_panel),
         web.get("/tv", page_tv),
@@ -492,6 +568,7 @@ def make_app():
         web.post("/api/show", api_show),
         web.post("/api/control", api_control),
         web.post("/api/quality", api_quality),
+        web.post("/api/bg", api_bg),
     ])
     return app
 

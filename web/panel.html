@@ -90,6 +90,19 @@
     </section>
 
     <section class="card">
+      <h2>Fundo em loop</h2>
+      <p>Vídeo que fica rodando na TV até você remover. Ao projetar algo ele pausa; quando a projeção acabar ou a janela fechar, volta de onde parou.</p>
+      <div class="list" style="max-height:none">
+        <span class="empty" id="bgName">Nenhum fundo definido</span>
+        <div class="row">
+          <button class="primary" id="pickBg">Escolher vídeo de fundo...</button>
+          <button id="clearBg">Remover fundo</button>
+        </div>
+        <label class="row" style="color:var(--mut);font-size:13px"><input type="checkbox" id="bgSound"> Tocar com som</label>
+      </div>
+    </section>
+
+    <section class="card">
       <h2>Pasta "media"</h2>
       <p id="mediaFolder">Atalho para arquivos que você deixar nessa pasta.</p>
       <div class="list" id="media"><span class="empty">Nenhum arquivo.</span></div>
@@ -180,7 +193,9 @@ function render() {
   $('#pill').className = 'pill' + (on ? ' on' : '');
   $('#pillText').textContent = on ? (st.tv > 1 ? st.tv + ' TVs conectadas' : 'TV conectada') : 'Sem TV conectada';
   var labels = { blank: 'Nada (TV em espera)', screen: 'Tela: ', window: 'Janela: ', video: 'Vídeo: ', image: 'Imagem: ' };
-  $('#nowText').textContent = st.mode === 'blank' ? labels.blank : labels[st.mode] + st.name;
+  $('#nowText').textContent = st.mode === 'blank' ? (st.bg_name ? 'Fundo em loop: ' + st.bg_name : labels.blank) : labels[st.mode] + st.name;
+  $('#bgName').textContent = st.bg_name ? '🎞 ' + st.bg_name : 'Nenhum fundo definido';
+  if (document.activeElement !== $('#bgSound')) $('#bgSound').checked = st.bg_muted === false;
   if (document.activeElement !== $('#quality')) $('#quality').value = st.quality || 'normal';
   $('#vc').className = st.mode === 'video' ? 'show' : '';
   var p = st.progress || {};
@@ -201,6 +216,16 @@ function connect() {
   ws.onclose = function () { setTimeout(connect, 1500); };
 }
 
+$('#pickBg').onclick = function () {
+  toast('Abrindo seletor de arquivos no PC...');
+  api('/api/pick', { kind: 'video' }).then(function (r) {
+    if (!r.path) return;
+    api('/api/bg', { action: 'set', path: r.path, muted: !$('#bgSound').checked })
+      .then(function (x) { if (!x.ok) toast(x.error || 'Erro'); });
+  });
+};
+$('#clearBg').onclick = function () { api('/api/bg', { action: 'clear' }); };
+$('#bgSound').onchange = function () { api('/api/bg', { action: 'muted', value: !this.checked }); };
 $('#refresh').onclick = loadSources;
 $('#stop').onclick = function () { show({ mode: 'blank' }); };
 $('#pickVideo').onclick = function () { pick('video'); };

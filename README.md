@@ -27,7 +27,8 @@ Igual ao que você já faz com o Reaper Remote:
 1. Abra o **TV Cast** na TV e digite o IP mostrado no painel. Ele lembra o IP e reconecta sozinho nas próximas vezes.
 2. No painel do PC escolha: **Tela inteira**, **Janela**, **Vídeo** ou **Imagem**. Aparece na TV na hora.
 3. Botão **Parar projeção** volta a TV para a tela de espera.
-4. Controle remoto da TV: **VOLTAR** na projeção volta para a tela de IP.
+4. **Fundo em loop**: no painel, "Escolher vídeo de fundo". Ele roda na TV sem parar. Ao projetar tela, janela, vídeo ou imagem, o fundo pausa; ao parar a projeção (ou a janela fechar) ele volta de onde parou. "Remover fundo" desliga.
+5. Controle remoto da TV: **VOLTAR** na projeção volta para a tela de IP.
 
 ## Limitações
 
