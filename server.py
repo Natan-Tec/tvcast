@@ -35,7 +35,7 @@ VIDEO_EXT = {".mp4", ".webm", ".mkv", ".mov", ".m4v", ".avi", ".ogv", ".ts"}
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
 
 # preset: (largura máx, qualidade JPEG, fps)
-PRESETS = {"leve": (960, 55, 12), "normal": (1280, 65, 15), "alta": (1920, 78, 20)}
+PRESETS = {"minima": (640, 45, 10), "leve": (960, 55, 12), "normal": (1280, 65, 15), "alta": (1920, 78, 20)}
 
 state = {
     "mode": "blank",       # blank | screen | window | video | image
@@ -45,6 +45,7 @@ state = {
     "rev": 0,
     "quality": "normal",
     "bg": None,            # {"file_id", "name", "muted"}: vídeo de fundo em loop
+    "lyrics": {"text": "", "size": 1.0},   # texto por cima de tudo (letras)
 }
 FILES = {}                 # id -> Path (só o que foi escolhido no painel é servido)
 clients = {"tv": set(), "panel": set()}
@@ -263,6 +264,7 @@ def tv_state():
     elif m in ("video", "image") and state["file_id"] in FILES:
         s["url"] = f"/file/{state['file_id']}/{quote(FILES[state['file_id']].name)}"
     s["bg"] = bg_payload()
+    s["lyrics"] = state["lyrics"]
     return s
 
 
@@ -336,6 +338,14 @@ async def stream(request):
         "Pragma": "no-cache",
     })
     await resp.prepare(request)
+    # Buffer de envio pequeno: evita acumular quadros velhos (principal causa de atraso).
+    try:
+        sock = request.transport.get_extra_info("socket")
+        if sock is not None:
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 32768)
+    except Exception:
+        pass
     try:
         while state["mode"] in ("screen", "window"):
             t0 = time.time()
@@ -542,6 +552,19 @@ async def _stop_watch(app):
     app["watch"].cancel()
 
 
+async def api_lyrics(request):
+    """Texto (letra) enviado direto para a TV: sem vídeo, sem atraso."""
+    d = await request.json()
+    text = str(d.get("text", ""))[:3000]
+    try:
+        size = min(2.0, max(0.5, float(d.get("size", 1.0))))
+    except (TypeError, ValueError):
+        size = 1.0
+    state["lyrics"] = {"text": text, "size": size}
+    await broadcast("tv", {"type": "lyrics", **state["lyrics"]})
+    return web.json_response({"ok": True})
+
+
 async def api_quality(request):
     d = await request.json()
     if d.get("preset") in PRESETS:
@@ -569,6 +592,7 @@ def make_app():
         web.post("/api/control", api_control),
         web.post("/api/quality", api_quality),
         web.post("/api/bg", api_bg),
+        web.post("/api/lyrics", api_lyrics),
     ])
     return app
 

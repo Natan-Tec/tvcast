@@ -28,7 +28,15 @@ Igual ao que você já faz com o Reaper Remote:
 2. No painel do PC escolha: **Tela inteira**, **Janela**, **Vídeo** ou **Imagem**. Aparece na TV na hora.
 3. Botão **Parar projeção** volta a TV para a tela de espera.
 4. **Fundo em loop**: no painel, "Escolher vídeo de fundo". Ele roda na TV sem parar. Ao projetar tela, janela, vídeo ou imagem, o fundo pausa; ao parar a projeção (ou a janela fechar) ele volta de onde parou. "Remover fundo" desliga.
-5. Controle remoto da TV: **VOLTAR** na projeção volta para a tela de IP.
+5. **Letra / texto**: cole a letra no painel, separe as estrofes com linha em branco e clique (ou use ← →). O texto vai direto para a TV, por cima do fundo, sem atraso. Esc limpa.
+6. **Celular como monitor de retorno**: abra `http://IP:8765/tv?lite=1` (sem o vídeo de fundo, bem mais leve).
+7. Controle remoto da TV: **VOLTAR** na projeção volta para a tela de IP.
+
+## Se o vídeo ou a tela engasgar
+
+- Tela/janela usam imagens JPEG: sempre têm algum atraso (0,3 a 1 s) e pesam em aparelho fraco. Para letras, use o card **Letra / texto**.
+- Use a qualidade **Mínima** no painel em aparelhos fracos.
+- Converta vídeos pesados para 720p: `ffmpeg -i entrada.mkv -vf scale=-2:720 -c:v libx264 -preset fast -crf 23 -c:a aac saida.mp4`
 
 ## Limitações
 

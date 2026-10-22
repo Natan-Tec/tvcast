@@ -18,6 +18,11 @@
   #dot.on { background: #33c27f; }
   #msg { position: absolute; left: 0; right: 0; bottom: 40px; text-align: center; font-size: 28px;
     background: rgba(0,0,0,.7); padding: 12px; display: none; }
+  #lyr { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none;
+    align-items: center; justify-content: center; text-align: center; }
+  #lyrIn { display: inline-block; max-width: 92%; font-weight: bold; color: #fff; line-height: 1.25;
+    white-space: pre-wrap; word-wrap: break-word;
+    text-shadow: 0 0 8px #000, 0 0 16px #000, 2px 2px 4px #000, -2px -2px 4px #000; }
 </style>
 </head>
 <body>
@@ -28,6 +33,7 @@
   <h1>TV Cast</h1>
   <p><span id="dot"></span><span id="idleText">Procurando o PC...</span></p>
 </div>
+<div id="lyr"><div id="lyrIn"></div></div>
 <div id="msg"></div>
 <script>
 (function () {
@@ -40,6 +46,9 @@
   var ws = null, cur = { mode: 'blank' }, msgTimer = null;
   var bgvid = document.getElementById('bgvid');
   var bg = null, bgUrl = '';
+  var LITE = /[?&]lite=1/.test(location.search);   // monitor leve: sem vídeo de fundo
+  var lyr = document.getElementById('lyr'), lyrIn = document.getElementById('lyrIn');
+  var lyrOn = false, lyrScale = 1;
 
   function show(el, on) { el.style.display = on ? (el === idle ? 'flex' : 'block') : 'none'; }
 
@@ -59,8 +68,27 @@
     show(vid, false);
   }
 
+  function fitLyrics() {
+    var size = Math.floor(window.innerHeight * 0.12 * lyrScale);
+    var maxH = window.innerHeight * 0.9, guard = 0;
+    lyrIn.style.fontSize = size + 'px';
+    while ((lyrIn.offsetHeight > maxH || lyrIn.scrollWidth > lyrIn.clientWidth) && size > 16 && guard++ < 90) {
+      size -= 2; lyrIn.style.fontSize = size + 'px';
+    }
+  }
+
+  function setLyrics(text, size) {
+    lyrScale = size || 1;
+    lyrOn = !!text;
+    if (!text) { lyr.style.display = 'none'; lyrIn.textContent = ''; return; }
+    lyrIn.textContent = text; lyr.style.display = 'flex'; fitLyrics();
+  }
+
+  window.addEventListener('resize', function () { if (lyrOn) fitLyrics(); });
+
   // Fundo em loop: só troca o src se o arquivo mudou (assim retoma de onde parou).
   function applyBg(b) {
+    if (LITE) b = null;
     bg = b;
     if (!b) {
       bgUrl = '';
@@ -82,7 +110,7 @@
     } else {
       try { bgvid.pause(); } catch (e) {}
       show(bgvid, false);
-      if (!fg) show(idle, true);
+      if (!fg) show(idle, !lyrOn);
     }
   }
 
@@ -90,6 +118,7 @@
     cur = s;
     clearMedia();
     applyBg(s.bg || null);
+    setLyrics(s.lyrics ? s.lyrics.text : '', s.lyrics ? s.lyrics.size : 1);
     if (s.mode === 'screen' || s.mode === 'window') {
       show(idle, false); show(img, true);
       img.onerror = function () {
@@ -139,6 +168,7 @@
       if (d.type === 'state') apply(d.state);
       else if (d.type === 'control') control(d);
       else if (d.type === 'bg') { applyBg(d.bg); updateBgVisibility(); }
+      else if (d.type === 'lyrics') { setLyrics(d.text, d.size); updateBgVisibility(); }
     };
     ws.onclose = function () {
       dot.className = ''; idleText.textContent = 'Procurando o PC...';

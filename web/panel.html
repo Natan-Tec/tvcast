@@ -42,6 +42,8 @@
   .time { font-variant-numeric:tabular-nums; color:var(--mut); font-size:13px; min-width:100px; }
   #toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:#2b3342;
            border:1px solid var(--line); padding:10px 16px; border-radius:10px; display:none; }
+  textarea { width:100%; font:inherit; color:var(--txt); background:#10141b; border:1px solid var(--line);
+             border-radius:8px; padding:10px; resize:vertical; }
 </style>
 </head>
 <body>
@@ -55,6 +57,7 @@
     <div class="t"><small>Projetando agora</small><span id="nowText">Nada (TV em espera)</span></div>
     <label class="row"><small style="margin:0">Qualidade da tela</small>
       <select id="quality">
+        <option value="minima">Mínima (640px)</option>
         <option value="leve">Leve (960px)</option>
         <option value="normal">Normal (1280px)</option>
         <option value="alta">Alta (1920px)</option>
@@ -87,6 +90,21 @@
       <h2>Imagem</h2>
       <p>Mostra uma foto ou imagem na TV.</p>
       <button class="primary" id="pickImage">Escolher imagem...</button>
+    </section>
+
+    <section class="card" style="grid-column:1/-1">
+      <h2>Letra / texto</h2>
+      <p>Cole a letra e separe as estrofes com uma linha em branco. Clique numa estrofe para mostrar na TV (ou use as setas ← →). Vai por cima do fundo em loop, sem atraso. Esc limpa.</p>
+      <textarea id="lyText" rows="8" placeholder="Estrofe 1...&#10;&#10;Estrofe 2..."></textarea>
+      <div class="row" style="margin:10px 0">
+        <button id="lyPrev">◀ Anterior</button>
+        <button id="lyNext">Próxima ▶</button>
+        <button class="danger" id="lyClear">Limpar da tela</button>
+        <label class="row" style="color:var(--mut);font-size:13px">Tamanho
+          <select id="lySize"><option value="0.75">Pequeno</option><option value="1" selected>Médio</option><option value="1.25">Grande</option></select>
+        </label>
+      </div>
+      <div class="list" id="lyList" style="max-height:220px"></div>
     </section>
 
     <section class="card">
@@ -215,6 +233,46 @@ function connect() {
   };
   ws.onclose = function () { setTimeout(connect, 1500); };
 }
+
+var stanzas = [], lyIdx = -1;
+function parseLy() {
+  var t = $('#lyText').value;
+  stanzas = t.split(/\n\s*\n/).map(function (x) { return x.trim(); }).filter(function (x) { return x; });
+  var list = $('#lyList'); list.innerHTML = '';
+  if (!stanzas.length) {
+    var s = document.createElement('span'); s.className = 'empty'; s.textContent = 'Cole a letra acima.'; list.appendChild(s);
+  }
+  stanzas.forEach(function (st, i) {
+    var b = btn((i + 1) + '. ' + st.split('\n')[0], function () { showLy(i); });
+    if (i === lyIdx) b.className = 'active';
+    list.appendChild(b);
+  });
+  try { localStorage.setItem('lyText', t); } catch (e) {}
+}
+function markLy(i) {
+  Array.prototype.forEach.call($('#lyList').children, function (b, k) { b.className = k === i ? 'active' : ''; });
+}
+function showLy(i) {
+  if (i < 0 || i >= stanzas.length) return;
+  lyIdx = i;
+  api('/api/lyrics', { text: stanzas[i], size: parseFloat($('#lySize').value) });
+  markLy(i);
+}
+function clearLy() { lyIdx = -1; api('/api/lyrics', { text: '' }); markLy(-1); }
+$('#lyText').oninput = parseLy;
+$('#lyPrev').onclick = function () { showLy(lyIdx <= 0 ? 0 : lyIdx - 1); };
+$('#lyNext').onclick = function () { showLy(lyIdx + 1); };
+$('#lyClear').onclick = clearLy;
+$('#lySize').onchange = function () { if (lyIdx >= 0) showLy(lyIdx); };
+document.addEventListener('keydown', function (e) {
+  var tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'textarea' || tag === 'input' || tag === 'select') return;
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown') { e.preventDefault(); showLy(lyIdx + 1); }
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') { e.preventDefault(); showLy(lyIdx <= 0 ? 0 : lyIdx - 1); }
+  else if (e.key === 'Escape') clearLy();
+});
+try { $('#lyText').value = localStorage.getItem('lyText') || ''; } catch (e) {}
+parseLy();
 
 $('#pickBg').onclick = function () {
   toast('Abrindo seletor de arquivos no PC...');
