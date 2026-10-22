@@ -22,7 +22,7 @@ from urllib.parse import quote
 
 from aiohttp import WSMsgType, web
 
-PORT = int(os.environ.get("TVCAST_PORT", "8080"))
+PORT = int(os.environ.get("TVCAST_PORT", "8765"))
 ALLOW_REMOTE_PANEL = os.environ.get("TVCAST_ALLOW_REMOTE") == "1"
 BASE = Path(__file__).resolve().parent
 WEB = BASE / "web"

@@ -74,7 +74,7 @@ public class MainActivity extends Activity {
 
     private void openTv(String hostPort) {
         onSetup = false;
-        String h = hostPort.contains(":") ? hostPort : hostPort + ":8080";
+        String h = hostPort.contains(":") ? hostPort : hostPort + ":8765";
         web.loadUrl("http://" + h + "/tv");
     }
 
