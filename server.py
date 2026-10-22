@@ -430,6 +430,12 @@ async def api_show(request):
     elif mode == "window":
         wid = d.get("id")
         await loop.run_in_executor(None, focus_window, wid)
+        await asyncio.sleep(0.3)
+        rect = await loop.run_in_executor(None, window_rect, wid)
+        print("Janela escolhida:", d.get("title"), "-> posição/tamanho:", rect)
+        if not rect:
+            await broadcast("panel", {"type": "toast", "text":
+                "Não consegui ler a posição dessa janela; mostrando a tela inteira."})
         state.update(mode="window", source={"kind": "window", "id": wid},
                      name=d.get("title") or "Janela", file_id=None)
     elif mode in ("file", "video", "image"):
