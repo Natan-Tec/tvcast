@@ -30,7 +30,9 @@ Igual ao que você já faz com o Reaper Remote:
 4. **Fundo em loop**: no painel, "Escolher vídeo de fundo". Ele roda na TV sem parar. Ao projetar tela, janela, vídeo ou imagem, o fundo pausa; ao parar a projeção (ou a janela fechar) ele volta de onde parou. "Remover fundo" desliga.
 5. **Letra / texto**: cole a letra no painel, separe as estrofes com linha em branco e clique (ou use ← →). O texto vai direto para a TV, por cima do fundo, sem atraso. Esc limpa.
 6. **Celular como monitor de retorno**: abra `http://IP:8765/tv?lite=1` (sem o vídeo de fundo, bem mais leve).
-7. Controle remoto da TV: **VOLTAR** na projeção volta para a tela de IP.
+7. **Página da web (URL)**: cole o endereço (ex.: a página de letras ao vivo) e clique em "Mostrar na TV". Ela fica por cima do fundo e volta ao fundo quando você clicar em "Parar projeção". No app da TV ela abre numa tela própria (sem bloqueio de sites); num navegador comum alguns sites bloqueiam. "Recarregar página" atualiza.
+8. **CSS personalizado**: o campo do painel vale para a página da web (no app da TV) e para a letra (`#lyr` e `#lyrIn`). Fica salvo em `settings.json`.
+9. Controle remoto da TV: **VOLTAR** na projeção volta para a tela de IP.
 
 ## Se o vídeo ou a tela engasgar
 

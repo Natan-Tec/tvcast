@@ -18,7 +18,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from aiohttp import WSMsgType, web
 
@@ -46,6 +46,8 @@ state = {
     "quality": "normal",
     "bg": None,            # {"file_id", "name", "muted"}: vídeo de fundo em loop
     "lyrics": {"text": "", "size": 1.0},   # texto por cima de tudo (letras)
+    "page": "",            # URL mostrada na TV (modo "url")
+    "css": "",             # CSS personalizado (página + letra)
 }
 FILES = {}                 # id -> Path (só o que foi escolhido no painel é servido)
 clients = {"tv": set(), "panel": set()}
@@ -235,6 +237,36 @@ def get_frame():
 
 
 # ---------------------------------------------------------------- util
+SETTINGS_FILE = BASE / "settings.json"
+RECENT_URLS = []
+
+
+def load_settings():
+    try:
+        d = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        d = {}
+    state["css"] = str(d.get("css", ""))
+    RECENT_URLS[:] = [u for u in d.get("urls", []) if isinstance(u, str)][:10]
+
+
+def save_settings():
+    try:
+        SETTINGS_FILE.write_text(
+            json.dumps({"css": state["css"], "urls": RECENT_URLS}, ensure_ascii=False, indent=1),
+            encoding="utf-8")
+    except Exception as e:
+        print("Não consegui salvar settings.json:", e)
+
+
+def remember_url(u):
+    if u in RECENT_URLS:
+        RECENT_URLS.remove(u)
+    RECENT_URLS.insert(0, u)
+    del RECENT_URLS[10:]
+    save_settings()
+
+
 def lan_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
@@ -265,6 +297,8 @@ def tv_state():
         s["url"] = f"/file/{state['file_id']}/{quote(FILES[state['file_id']].name)}"
     s["bg"] = bg_payload()
     s["lyrics"] = state["lyrics"]
+    s["css"] = state["css"]
+    s["page"] = state["page"] if m == "url" else ""
     return s
 
 
@@ -483,6 +517,15 @@ async def api_show(request):
         fid = uuid.uuid4().hex[:10]
         FILES[fid] = path
         state.update(mode=kind, source={}, name=path.name, file_id=fid)
+    elif mode == "url":
+        u = str(d.get("url", "")).strip()
+        if u and "://" not in u and "." in u and " " not in u:
+            u = "https://" + u
+        pu = urlparse(u)
+        if pu.scheme not in ("http", "https") or not pu.netloc:
+            return web.json_response({"ok": False, "error": "Endereço inválido. Use http:// ou https://"}, status=400)
+        state.update(mode="url", source={}, name=u, file_id=None, page=u)
+        remember_url(u)
     elif mode == "blank":
         state.update(mode="blank", source={}, name="", file_id=None)
     else:
@@ -565,6 +608,18 @@ async def api_lyrics(request):
     return web.json_response({"ok": True})
 
 
+async def api_css(request):
+    d = await request.json()
+    state["css"] = str(d.get("css", ""))[:20000]
+    save_settings()
+    await broadcast("tv", {"type": "css", "css": state["css"]})
+    return web.json_response({"ok": True})
+
+
+async def api_settings(request):
+    return web.json_response({"css": state["css"], "urls": RECENT_URLS})
+
+
 async def api_quality(request):
     d = await request.json()
     if d.get("preset") in PRESETS:
@@ -574,6 +629,7 @@ async def api_quality(request):
 
 
 def make_app():
+    load_settings()
     app = web.Application(middlewares=[guard], client_max_size=1024 ** 2)
     app.on_startup.append(_start_watch)
     app.on_cleanup.append(_stop_watch)
@@ -593,6 +649,8 @@ def make_app():
         web.post("/api/quality", api_quality),
         web.post("/api/bg", api_bg),
         web.post("/api/lyrics", api_lyrics),
+        web.post("/api/css", api_css),
+        web.get("/api/settings", api_settings),
     ])
     return app
 

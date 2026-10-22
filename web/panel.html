@@ -44,6 +44,9 @@
            border:1px solid var(--line); padding:10px 16px; border-radius:10px; display:none; }
   textarea { width:100%; font:inherit; color:var(--txt); background:#10141b; border:1px solid var(--line);
              border-radius:8px; padding:10px; resize:vertical; }
+  input[type=text] { font:inherit; color:var(--txt); background:#10141b; border:1px solid var(--line);
+                     border-radius:8px; padding:9px 12px; }
+  code { background:#10141b; padding:1px 5px; border-radius:4px; }
 </style>
 </head>
 <body>
@@ -92,6 +95,17 @@
       <button class="primary" id="pickImage">Escolher imagem...</button>
     </section>
 
+    <section class="card">
+      <h2>Página da web (URL)</h2>
+      <p>Mostra um site na TV, por exemplo a página de letras ao vivo. Aplica o CSS personalizado abaixo.</p>
+      <div class="row">
+        <input id="urlIn" type="text" placeholder="https://..." style="flex:1;min-width:180px">
+        <button class="primary" id="urlGo">Mostrar na TV</button>
+      </div>
+      <div class="row" style="margin-top:8px"><button id="urlReload">↻ Recarregar página</button></div>
+      <div class="list" id="urlList" style="margin-top:8px;max-height:160px"></div>
+    </section>
+
     <section class="card" style="grid-column:1/-1">
       <h2>Letra / texto</h2>
       <p>Cole a letra e separe as estrofes com uma linha em branco. Clique numa estrofe para mostrar na TV (ou use as setas ← →). Vai por cima do fundo em loop, sem atraso. Esc limpa.</p>
@@ -105,6 +119,17 @@
         </label>
       </div>
       <div class="list" id="lyList" style="max-height:220px"></div>
+    </section>
+
+    <section class="card" style="grid-column:1/-1">
+      <h2>CSS personalizado</h2>
+      <p>Vale para a <b>página da web</b> (no app da TV) e para a <b>letra/texto</b> (<code>#lyr</code> é a área, <code>#lyrIn</code> é o texto). Use <code>!important</code> para sobrescrever o site. Fica salvo no PC.</p>
+      <textarea id="cssText" rows="9" spellcheck="false" placeholder="#lyrIn { color: #ffe066; }"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button class="primary" id="cssApply">Aplicar na TV</button>
+        <button id="cssEx">Inserir exemplo</button>
+        <button id="cssClear">Limpar CSS</button>
+      </div>
     </section>
 
     <section class="card">
@@ -210,7 +235,7 @@ function render() {
   var on = st.tv > 0;
   $('#pill').className = 'pill' + (on ? ' on' : '');
   $('#pillText').textContent = on ? (st.tv > 1 ? st.tv + ' TVs conectadas' : 'TV conectada') : 'Sem TV conectada';
-  var labels = { blank: 'Nada (TV em espera)', screen: 'Tela: ', window: 'Janela: ', video: 'Vídeo: ', image: 'Imagem: ' };
+  var labels = { blank: 'Nada (TV em espera)', screen: 'Tela: ', window: 'Janela: ', video: 'Vídeo: ', image: 'Imagem: ', url: 'Página: ' };
   $('#nowText').textContent = st.mode === 'blank' ? (st.bg_name ? 'Fundo em loop: ' + st.bg_name : labels.blank) : labels[st.mode] + st.name;
   $('#bgName').textContent = st.bg_name ? '🎞 ' + st.bg_name : 'Nenhum fundo definido';
   if (document.activeElement !== $('#bgSound')) $('#bgSound').checked = st.bg_muted === false;
@@ -233,6 +258,29 @@ function connect() {
   };
   ws.onclose = function () { setTimeout(connect, 1500); };
 }
+
+var cssDirty = false;
+var EXAMPLE = ['/* Letra da TV */', '#lyrIn { color: #ffe066; font-family: Georgia, serif; }', '', '/* Página da web: ajuste os seletores do site */', 'body { background: #000 !important; }'].join('\n');
+function loadSettings() {
+  api('/api/settings').then(function (d) {
+    if (!cssDirty && document.activeElement !== $('#cssText')) $('#cssText').value = d.css || '';
+    var list = $('#urlList'); list.innerHTML = '';
+    (d.urls || []).forEach(function (u) {
+      list.appendChild(btn('🌐 ' + u, function () { $('#urlIn').value = u; showUrl(u); }));
+    });
+  });
+}
+function showUrl(u) { show({ mode: 'url', url: u }); setTimeout(loadSettings, 400); }
+$('#urlGo').onclick = function () { showUrl($('#urlIn').value.trim()); };
+$('#urlIn').onkeydown = function (e) { if (e.key === 'Enter') $('#urlGo').click(); };
+$('#urlReload').onclick = function () { ctrl('reload'); };
+$('#cssText').oninput = function () { cssDirty = true; };
+$('#cssApply').onclick = function () {
+  api('/api/css', { css: $('#cssText').value }).then(function () { cssDirty = false; toast('CSS aplicado na TV.'); });
+};
+$('#cssClear').onclick = function () { $('#cssText').value = ''; $('#cssApply').click(); };
+$('#cssEx').onclick = function () { $('#cssText').value = EXAMPLE; cssDirty = true; };
+loadSettings();
 
 var stanzas = [], lyIdx = -1;
 function parseLy() {

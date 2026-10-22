@@ -26,9 +26,11 @@
 </style>
 </head>
 <body>
+<style id="customCss"></style>
 <video id="bgvid" playsinline loop muted></video>
 <img id="img" alt="">
 <video id="vid" playsinline></video>
+<iframe id="frame" style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;background:#000;display:none"></iframe>
 <div id="idle">
   <h1>TV Cast</h1>
   <p><span id="dot"></span><span id="idleText">Procurando o PC...</span></p>
@@ -49,6 +51,11 @@
   var LITE = /[?&]lite=1/.test(location.search);   // monitor leve: sem vídeo de fundo
   var lyr = document.getElementById('lyr'), lyrIn = document.getElementById('lyrIn');
   var lyrOn = false, lyrScale = 1;
+  var frame = document.getElementById('frame');
+  var customCss = document.getElementById('customCss');
+  var curCss = '', pageShown = false;
+  // No app da TV a página abre numa tela nativa (sem bloqueio de iframe e com CSS injetado).
+  var NATIVE = (typeof window.Android !== 'undefined') && (typeof window.Android.showUrl === 'function');
 
   function show(el, on) { el.style.display = on ? (el === idle ? 'flex' : 'block') : 'none'; }
 
@@ -61,11 +68,28 @@
   function send(o) { try { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); } catch (e) {} }
 
   function clearMedia() {
+    if (pageShown) { hidePage(); pageShown = false; }
     img.onerror = null;
     img.removeAttribute('src'); show(img, false);
     try { vid.pause(); } catch (e) {}
     vid.removeAttribute('src'); try { vid.load(); } catch (e) {}
     show(vid, false);
+  }
+
+  function showPage(url) {
+    if (NATIVE) { try { Android.showUrl(url, curCss); } catch (e) {} }
+    else { frame.src = url; show(frame, true); }
+  }
+
+  function hidePage() {
+    if (NATIVE) { try { Android.hideUrl(); } catch (e) {} }
+    else { frame.removeAttribute('src'); show(frame, false); }
+  }
+
+  function setCss(css) {
+    curCss = css || '';
+    customCss.textContent = curCss;
+    if (pageShown && NATIVE) { try { Android.setCss(curCss); } catch (e) {} }
   }
 
   function fitLyrics() {
@@ -119,6 +143,7 @@
     clearMedia();
     applyBg(s.bg || null);
     setLyrics(s.lyrics ? s.lyrics.text : '', s.lyrics ? s.lyrics.size : 1);
+    curCss = s.css || ''; customCss.textContent = curCss;
     if (s.mode === 'screen' || s.mode === 'window') {
       show(idle, false); show(img, true);
       img.onerror = function () {
@@ -127,6 +152,8 @@
         }, 1000);
       };
       img.src = s.url;
+    } else if (s.mode === 'url') {
+      show(idle, false); showPage(s.page); pageShown = true;
     } else if (s.mode === 'image') {
       show(idle, false); show(img, true); img.src = s.url;
     } else if (s.mode === 'video') {
@@ -146,6 +173,11 @@
   });
 
   function control(c) {
+    if (c.action === 'reload' && cur.mode === 'url') {
+      if (NATIVE) { try { Android.reloadUrl(); } catch (e) {} }
+      else if (frame.src) { frame.src = frame.src; }
+      return;
+    }
     if (cur.mode !== 'video') return;
     var a = c.action, v = Number(c.value);
     if (a === 'play') vid.play();
@@ -169,6 +201,7 @@
       else if (d.type === 'control') control(d);
       else if (d.type === 'bg') { applyBg(d.bg); updateBgVisibility(); }
       else if (d.type === 'lyrics') { setLyrics(d.text, d.size); updateBgVisibility(); }
+      else if (d.type === 'css') setCss(d.css);
     };
     ws.onclose = function () {
       dot.className = ''; idleText.textContent = 'Procurando o PC...';
