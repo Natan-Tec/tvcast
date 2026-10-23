@@ -14,6 +14,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -30,6 +31,12 @@ MEDIA = BASE / "media"
 MEDIA.mkdir(exist_ok=True)
 
 IS_WIN = sys.platform == "win32"
+
+try:
+    import windows_capture  # noqa: F401  (captura direta de janela, estilo OBS)
+    WGC_OK = IS_WIN
+except Exception:
+    WGC_OK = False
 
 VIDEO_EXT = {".mp4", ".webm", ".mkv", ".mov", ".m4v", ".avi", ".ogv", ".ts"}
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
@@ -144,6 +151,27 @@ def window_rect(wid):
     return None
 
 
+def window_title(wid):
+    try:
+        if IS_WIN:
+            n = user32.GetWindowTextLengthW(int(wid))
+            buf = ctypes.create_unicode_buffer(n + 1)
+            user32.GetWindowTextW(int(wid), buf, n + 1)
+            return buf.value
+    except Exception:
+        pass
+    return ""
+
+
+def restore_if_minimized(wid):
+    """Se estiver minimizada, restaura SEM ativar (a captura não vê janela minimizada)."""
+    try:
+        if IS_WIN and user32.IsIconic(int(wid)):
+            user32.ShowWindow(int(wid), 4)  # SW_SHOWNOACTIVATE
+    except Exception:
+        pass
+
+
 def window_exists(wid):
     try:
         if IS_WIN:
@@ -165,6 +193,117 @@ def focus_window(wid):
             subprocess.run(["wmctrl", "-ia", str(wid)], timeout=3)
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------- captura direta de janela
+class WindowGrabber:
+    """Captura UMA janela pelo Windows Graphics Capture (como o OBS).
+    Independe do que está na frente (Alt+Tab, menu Iniciar, outras janelas).
+    Só não funciona com a janela minimizada: aí fica o último quadro."""
+
+    def __init__(self, hwnd, title):
+        self.hwnd = int(hwnd)
+        self.title = title
+        self.lock = threading.Lock()
+        self.enc_lock = threading.Lock()
+        self.raw = None
+        self.raw_seq = 0
+        self.enc_seq = 0
+        self.jpeg = b""
+        self.t_enc = 0.0
+        self.control = None
+        self.how = ""
+
+    def start(self):
+        from windows_capture import WindowsCapture
+        extras = [dict(draw_border=False, cursor_capture=False), dict(cursor_capture=False), {}]
+        ident = [("hwnd", dict(window_hwnd=self.hwnd)), ("título", dict(window_name=self.title))]
+        last = None
+        for how, idk in ident:
+            if how == "título" and not self.title:
+                continue
+            for ex in extras:
+                try:
+                    cap = WindowsCapture(**idk, **ex)
+                    self._bind(cap)
+                    self.control = cap.start_free_threaded()
+                    self.how = how
+                    return
+                except Exception as e:  # versão sem esse parâmetro, janela não achada, etc.
+                    last = e
+        raise RuntimeError(last or "não foi possível iniciar a captura")
+
+    def _bind(self, cap):
+        @cap.event
+        def on_frame_arrived(frame, control):
+            try:
+                buf = frame.frame_buffer
+                h, w = int(buf.shape[0]), int(buf.shape[1])
+                if w < 2 or h < 2:
+                    return
+                data = buf.tobytes()
+                with self.lock:
+                    self.raw = (w, h, data)
+                    self.raw_seq += 1
+            except Exception as e:
+                print("Erro no quadro da janela:", e)
+
+        @cap.event
+        def on_closed():
+            pass
+
+    def stop(self):
+        try:
+            if self.control is not None:
+                self.control.stop()
+        except Exception:
+            pass
+        self.control = None
+
+    def snapshot(self):
+        """(jpeg, número do quadro). Codifica no ritmo do preset; devolve o último se nada mudou."""
+        width, quality, fps = PRESETS[state["quality"]]
+        with self.lock:
+            raw, rseq = self.raw, self.raw_seq
+        if raw is None or rseq == self.enc_seq or time.time() - self.t_enc < 1.0 / fps:
+            return self.jpeg, self.enc_seq
+        if not self.enc_lock.acquire(blocking=False):
+            return self.jpeg, self.enc_seq
+        try:
+            w, h, data = raw
+            img = Image.frombytes("RGB", (w, h), data, "raw", "BGRX")
+            if img.width > width:
+                img = img.resize((width, max(2, int(img.height * width / img.width))),
+                                 RESAMPLE, reducing_gap=2.0)
+            out = io.BytesIO()
+            img.save(out, "JPEG", quality=quality)
+            self.jpeg = out.getvalue()
+            self.enc_seq = rseq
+            self.t_enc = time.time()
+        finally:
+            self.enc_lock.release()
+        return self.jpeg, self.enc_seq
+
+
+GRAB = {"g": None}
+
+
+def stop_grabber():
+    g = GRAB["g"]
+    GRAB["g"] = None
+    if g:
+        g.stop()
+
+
+def start_grabber(wid, title):
+    """Devolve o WindowGrabber ou None (e o motivo) se não deu para iniciar."""
+    try:
+        g = WindowGrabber(wid, window_title(wid) or title)
+        g.start()
+        GRAB["g"] = g
+        return g, ""
+    except Exception as e:
+        return None, str(e)
 
 
 # ---------------------------------------------------------------- captura
@@ -380,10 +519,20 @@ async def stream(request):
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 32768)
     except Exception:
         pass
+    last_seq, last_write = -1, 0.0
     try:
         while state["mode"] in ("screen", "window"):
             t0 = time.time()
-            frame = await loop.run_in_executor(CAPTURE_POOL, get_frame)
+            g = GRAB["g"] if state["mode"] == "window" else None
+            if g is not None:
+                frame, seq = await loop.run_in_executor(None, g.snapshot)
+                if not frame or (seq == last_seq and t0 - last_write < 2.0):
+                    await asyncio.sleep(0.04)   # janela parada: não reenvia o mesmo quadro
+                    continue
+                last_seq = seq
+            else:
+                frame = await loop.run_in_executor(CAPTURE_POOL, get_frame)
+            last_write = time.time()
             head = b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n" % len(frame)
             await resp.write(head + frame + b"\r\n")
             fps = PRESETS[state["quality"]][2]
@@ -488,19 +637,36 @@ async def api_show(request):
     mode = d.get("mode")
     loop = asyncio.get_running_loop()
     progress.clear()
+    await loop.run_in_executor(None, stop_grabber)
 
     if mode == "screen":
         state.update(mode="screen", source={"kind": "screen", "monitor": int(d.get("monitor", 1))},
                      name=d.get("title") or "Tela inteira", file_id=None)
     elif mode == "window":
         wid = d.get("id")
-        await loop.run_in_executor(None, focus_window, wid)
-        await asyncio.sleep(0.3)
-        rect = await loop.run_in_executor(None, window_rect, wid)
-        print("Janela escolhida:", d.get("title"), "-> posição/tamanho:", rect)
-        if not rect:
-            await broadcast("panel", {"type": "toast", "text":
-                "Não consegui ler a posição dessa janela; mostrando a tela inteira."})
+        title = d.get("title") or ""
+        grab, why = None, ""
+        if WGC_OK:
+            await loop.run_in_executor(None, restore_if_minimized, wid)
+            grab, why = await loop.run_in_executor(None, start_grabber, wid, title)
+            if grab:
+                print("Janela escolhida:", title, "-> captura direta (%s)" % grab.how)
+                for _ in range(30):                      # espera o 1º quadro (até 3 s)
+                    if grab.raw_seq > 0:
+                        break
+                    await asyncio.sleep(0.1)
+                else:
+                    await broadcast("panel", {"type": "toast", "text":
+                        "A janela ainda não enviou imagem. Ela está minimizada? Restaure (não precisa ficar na frente)."})
+        if not grab:
+            # Reserva: copia a região da tela onde a janela está (precisa ficar visível).
+            await loop.run_in_executor(None, focus_window, wid)
+            await asyncio.sleep(0.3)
+            rect = await loop.run_in_executor(None, window_rect, wid)
+            print("Janela escolhida:", title, "-> captura por região:", rect, "|", why or "windows-capture não instalado")
+            msg = ("Captura direta indisponível (%s). Usando a região da tela: a janela precisa ficar visível. "
+                   "Rode o run.bat de novo para instalar o windows-capture." % (why or "pacote não instalado"))
+            await broadcast("panel", {"type": "toast", "text": msg})
         state.update(mode="window", source={"kind": "window", "id": wid},
                      name=d.get("title") or "Janela", file_id=None)
     elif mode in ("file", "video", "image"):
@@ -576,6 +742,7 @@ async def window_watch():
             misses = 0 if ok else misses + 1
             if misses >= 2:
                 misses = 0
+                await loop.run_in_executor(None, stop_grabber)
                 state.update(mode="blank", source={}, name="", file_id=None)
                 state["rev"] += 1
                 progress.clear()
@@ -663,6 +830,8 @@ if __name__ == "__main__":
     print(" TV Cast rodando")
     print(f" Painel (abra no PC):   http://localhost:{PORT}")
     print(f" Na TV, digite o IP:    {ip}:{PORT}")
+    print(" Captura de janela:     " + ("direta (estilo OBS)" if WGC_OK else
+          "por região (instale: pip install windows-capture)" if IS_WIN else "por região"))
     print(" Para parar: Ctrl+C")
     print("=" * 56)
     web.run_app(make_app(), host="0.0.0.0", port=PORT, print=None)

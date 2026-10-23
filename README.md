@@ -40,10 +40,13 @@ Igual ao que você já faz com o Reaper Remote:
 - Use a qualidade **Mínima** no painel em aparelhos fracos.
 - Converta vídeos pesados para 720p: `ffmpeg -i entrada.mkv -vf scale=-2:720 -c:v libx264 -preset fast -crf 23 -c:a aac saida.mp4`
 
+## Captura de janela (estilo OBS)
+
+A janela é capturada diretamente (Windows Graphics Capture): pode ficar atrás de outras janelas, do Alt+Tab ou do menu Iniciar que a TV continua vendo só ela. **Não pode minimizar** (aí a TV fica no último quadro). Se aparecer o aviso "Captura direta indisponível", o `windows-capture` não instalou: rode o `run.bat` de novo com internet. Sem ele, o app usa a cópia da região da tela, que precisa ficar visível.
+
 ## Limitações
 
 - **Tela e janela vão sem áudio** (é um fluxo de imagens). Vídeo de arquivo toca com áudio.
-- **Janela** = região da tela onde ela está. O app a traz para a frente; se outra janela cobrir, a TV mostra a que estiver por cima.
 - **Vídeo**: a TV toca o que o WebView dela suporta (MP4 H.264, WebM). MKV/AVI podem falhar; a TV avisa na tela.
 - Atraso típico de 0,2 a 0,5 s na tela. Se travar, escolha qualidade **Leve** no painel.
 - O painel só abre no próprio PC. Para liberar para o celular: variável `TVCAST_ALLOW_REMOTE=1`.

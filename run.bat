@@ -12,6 +12,7 @@ if not exist .venv (
   call .venv\Scripts\python.exe -m pip install --upgrade pip
   call .venv\Scripts\python.exe -m pip install -r requirements.txt
 )
+.venv\Scripts\python.exe -m pip install -q -r requirements.txt
 start "" http://localhost:8765
 .venv\Scripts\python.exe server.py
 pause
