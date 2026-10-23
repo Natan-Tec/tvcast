@@ -10,8 +10,8 @@ android {
         applicationId "com.natantec.tvcast"
         minSdk 21
         targetSdk 34
-        versionCode 2
-        versionName "1.1"
+        versionCode 3
+        versionName "1.2"
     }
 
     // Chave de debug fixa no repositório: assim cada APK novo instala por cima do anterior.

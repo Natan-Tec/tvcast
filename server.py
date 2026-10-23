@@ -55,6 +55,7 @@ state = {
     "lyrics": {"text": "", "size": 1.0},   # texto por cima de tudo (letras)
     "page": "",            # URL mostrada na TV (modo "url")
     "css": "",             # CSS personalizado (página + letra)
+    "badge": "auto",       # selo TV CAST + status na TV: auto | always | never
 }
 FILES = {}                 # id -> Path (só o que foi escolhido no painel é servido)
 clients = {"tv": set(), "panel": set()}
@@ -386,13 +387,14 @@ def load_settings():
     except Exception:
         d = {}
     state["css"] = str(d.get("css", ""))
+    state["badge"] = d.get("badge") if d.get("badge") in ("auto", "always", "never") else "auto"
     RECENT_URLS[:] = [u for u in d.get("urls", []) if isinstance(u, str)][:10]
 
 
 def save_settings():
     try:
         SETTINGS_FILE.write_text(
-            json.dumps({"css": state["css"], "urls": RECENT_URLS}, ensure_ascii=False, indent=1),
+            json.dumps({"css": state["css"], "urls": RECENT_URLS, "badge": state["badge"]}, ensure_ascii=False, indent=1),
             encoding="utf-8")
     except Exception as e:
         print("Não consegui salvar settings.json:", e)
@@ -404,6 +406,32 @@ def remember_url(u):
     RECENT_URLS.insert(0, u)
     del RECENT_URLS[10:]
     save_settings()
+
+
+DISCOVERY_PORT = int(os.environ.get("TVCAST_DISCOVERY_PORT", "8766"))
+
+
+def discovery_loop():
+    """Responde ao 'TVCAST?' do app da TV: ele acha o PC sem digitar o IP."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind(("0.0.0.0", DISCOVERY_PORT))
+    except OSError as e:
+        print("Busca automática desativada (porta UDP %d): %s" % (DISCOVERY_PORT, e))
+        return
+    reply = json.dumps({"app": "tvcast", "port": PORT, "name": socket.gethostname()}).encode()
+    while True:
+        try:
+            data, addr = s.recvfrom(256)
+            if data.strip() == b"TVCAST?":
+                s.sendto(reply, addr)
+        except OSError:          # no Windows, UDP pode dar "connection reset": ignora
+            time.sleep(0.2)
+
+
+def start_discovery():
+    threading.Thread(target=discovery_loop, daemon=True).start()
 
 
 def lan_ip():
@@ -437,6 +465,7 @@ def tv_state():
     s["bg"] = bg_payload()
     s["lyrics"] = state["lyrics"]
     s["css"] = state["css"]
+    s["badge"] = state["badge"]
     s["page"] = state["page"] if m == "url" else ""
     return s
 
@@ -521,20 +550,23 @@ async def stream(request):
         pass
     last_seq, last_write = -1, 0.0
     try:
+        await resp.write(b"--frame\r\n")
         while state["mode"] in ("screen", "window"):
             t0 = time.time()
             g = GRAB["g"] if state["mode"] == "window" else None
             if g is not None:
                 frame, seq = await loop.run_in_executor(None, g.snapshot)
                 if not frame or (seq == last_seq and t0 - last_write < 2.0):
-                    await asyncio.sleep(0.04)   # janela parada: não reenvia o mesmo quadro
+                    await asyncio.sleep(0.02)   # janela parada: não reenvia o mesmo quadro
                     continue
                 last_seq = seq
             else:
                 frame = await loop.run_in_executor(CAPTURE_POOL, get_frame)
             last_write = time.time()
-            head = b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n" % len(frame)
-            await resp.write(head + frame + b"\r\n")
+            head = b"Content-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n" % len(frame)
+            # O delimitador do PRÓXIMO quadro já vai junto: o navegador exibe este quadro na hora,
+            # sem esperar o quadro seguinte (que numa janela parada pode demorar segundos).
+            await resp.write(head + frame + b"\r\n--frame\r\n")
             fps = PRESETS[state["quality"]][2]
             wait = 1.0 / fps - (time.time() - t0)
             if wait > 0:
@@ -783,8 +815,18 @@ async def api_css(request):
     return web.json_response({"ok": True})
 
 
+async def api_badge(request):
+    d = await request.json()
+    m = d.get("mode")
+    if m in ("auto", "always", "never"):
+        state["badge"] = m
+        save_settings()
+        await broadcast("tv", {"type": "badge", "mode": m})
+    return web.json_response({"ok": True})
+
+
 async def api_settings(request):
-    return web.json_response({"css": state["css"], "urls": RECENT_URLS})
+    return web.json_response({"css": state["css"], "urls": RECENT_URLS, "badge": state["badge"]})
 
 
 async def api_quality(request):
@@ -817,6 +859,7 @@ def make_app():
         web.post("/api/bg", api_bg),
         web.post("/api/lyrics", api_lyrics),
         web.post("/api/css", api_css),
+        web.post("/api/badge", api_badge),
         web.get("/api/settings", api_settings),
     ])
     return app
@@ -834,4 +877,5 @@ if __name__ == "__main__":
           "por região (instale: pip install windows-capture)" if IS_WIN else "por região"))
     print(" Para parar: Ctrl+C")
     print("=" * 56)
+    start_discovery()
     web.run_app(make_app(), host="0.0.0.0", port=PORT, print=None)

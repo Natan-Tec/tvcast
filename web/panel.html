@@ -66,6 +66,13 @@
         <option value="alta">Alta (1920px)</option>
       </select>
     </label>
+    <label class="row"><small style="margin:0">Selo "TV CAST" na TV</small>
+      <select id="badge">
+        <option value="auto">Automático (só ao conectar/cair)</option>
+        <option value="always">Sempre visível</option>
+        <option value="never">Nunca</option>
+      </select>
+    </label>
     <button class="danger" id="stop">Parar projeção</button>
   </div>
 
@@ -264,6 +271,7 @@ var EXAMPLE = ['/* Letra da TV */', '#lyrIn { color: #ffe066; font-family: Georg
 function loadSettings() {
   api('/api/settings').then(function (d) {
     if (!cssDirty && document.activeElement !== $('#cssText')) $('#cssText').value = d.css || '';
+    if (document.activeElement !== $('#badge')) $('#badge').value = d.badge || 'auto';
     var list = $('#urlList'); list.innerHTML = '';
     (d.urls || []).forEach(function (u) {
       list.appendChild(btn('🌐 ' + u, function () { $('#urlIn').value = u; showUrl(u); }));
@@ -275,6 +283,7 @@ $('#urlGo').onclick = function () { showUrl($('#urlIn').value.trim()); };
 $('#urlIn').onkeydown = function (e) { if (e.key === 'Enter') $('#urlGo').click(); };
 $('#urlReload').onclick = function () { ctrl('reload'); };
 $('#cssText').oninput = function () { cssDirty = true; };
+$('#badge').onchange = function () { api('/api/badge', { mode: this.value }); };
 $('#cssApply').onclick = function () {
   api('/api/css', { css: $('#cssText').value }).then(function () { cssDirty = false; toast('CSS aplicado na TV.'); });
 };

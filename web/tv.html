@@ -16,6 +16,12 @@
   #dot { display: inline-block; width: 16px; height: 16px; border-radius: 50%;
     background: #e5534b; margin-right: 10px; }
   #dot.on { background: #33c27f; }
+  #badge { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); display: none;
+    padding: 8px 20px; border-radius: 22px; background: rgba(0,0,0,.72); font-size: 20px;
+    letter-spacing: 1px; white-space: nowrap; z-index: 50; }
+  #badge i { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 10px;
+    background: #e5534b; }
+  #badge.ok i { background: #33c27f; }
   #msg { position: absolute; left: 0; right: 0; bottom: 40px; text-align: center; font-size: 28px;
     background: rgba(0,0,0,.7); padding: 12px; display: none; }
   #lyr { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none;
@@ -36,6 +42,7 @@
   <p><span id="dot"></span><span id="idleText">Procurando o PC...</span></p>
 </div>
 <div id="lyr"><div id="lyrIn"></div></div>
+<div id="badge"><i></i><span id="badgeText"></span></div>
 <div id="msg"></div>
 <script>
 (function () {
@@ -56,6 +63,31 @@
   var curCss = '', pageShown = false;
   // No app da TV a página abre numa tela nativa (sem bloqueio de iframe e com CSS injetado).
   var NATIVE = (typeof window.Android !== 'undefined') && (typeof window.Android.showUrl === 'function');
+
+  // Selo "TV CAST" + status da conexão (auto: some depois de 5 s, mas fica se cair; always; never).
+  var connected = false, badgeMode = 'auto', badgeUntil = 0, badgeTimer = null;
+  try { badgeMode = localStorage.getItem('tvBadge') || 'auto'; } catch (e) {}
+  var badgeEl = document.getElementById('badge'), badgeText = document.getElementById('badgeText');
+  var NATIVE_BADGE = (typeof window.Android !== 'undefined') && (typeof window.Android.setBadge === 'function');
+
+  function renderBadge() {
+    var text = connected ? 'TV CAST \u00b7 Conectado' : 'TV CAST \u00b7 Reconectando ao PC...';
+    var visible = badgeMode === 'always' || (badgeMode === 'auto' && (!connected || Date.now() < badgeUntil));
+    if (NATIVE_BADGE) { try { Android.setBadge(visible, text, connected); } catch (e) {} }
+    badgeEl.style.display = (visible && !NATIVE_BADGE) ? 'block' : 'none';
+    badgeEl.className = connected ? 'ok' : '';
+    badgeText.textContent = text;
+  }
+  function flashBadge() {
+    badgeUntil = Date.now() + 5000; renderBadge();
+    clearTimeout(badgeTimer); badgeTimer = setTimeout(renderBadge, 5100);
+  }
+  function setBadgeMode(m) {
+    if (m !== 'auto' && m !== 'always' && m !== 'never') m = 'auto';
+    badgeMode = m;
+    try { localStorage.setItem('tvBadge', m); } catch (e) {}
+    renderBadge();
+  }
 
   function show(el, on) { el.style.display = on ? (el === idle ? 'flex' : 'block') : 'none'; }
 
@@ -139,11 +171,15 @@
   }
 
   function apply(s) {
+    // Reconexão com a mesma página aberta: não recarrega o site.
+    var keepPage = (s.mode === 'url' && pageShown && cur.mode === 'url' && cur.rev === s.rev);
     cur = s;
-    clearMedia();
+    if (!keepPage) clearMedia();
+    if (s.badge) setBadgeMode(s.badge);
     applyBg(s.bg || null);
     setLyrics(s.lyrics ? s.lyrics.text : '', s.lyrics ? s.lyrics.size : 1);
     curCss = s.css || ''; customCss.textContent = curCss;
+    if (keepPage && NATIVE) { try { Android.setCss(curCss); } catch (e) {} }
     if (s.mode === 'screen' || s.mode === 'window') {
       show(idle, false); show(img, true);
       img.onerror = function () {
@@ -153,7 +189,8 @@
       };
       img.src = s.url;
     } else if (s.mode === 'url') {
-      show(idle, false); showPage(s.page); pageShown = true;
+      show(idle, false);
+      if (!keepPage) { showPage(s.page); pageShown = true; }
     } else if (s.mode === 'image') {
       show(idle, false); show(img, true); img.src = s.url;
     } else if (s.mode === 'video') {
@@ -194,6 +231,7 @@
     ws = new WebSocket(proto + location.host + '/ws?role=tv');
     ws.onopen = function () {
       dot.className = 'on'; idleText.textContent = 'Conectado ao PC. Aguardando...';
+      connected = true; flashBadge();
     };
     ws.onmessage = function (e) {
       var d; try { d = JSON.parse(e.data); } catch (x) { return; }
@@ -202,9 +240,11 @@
       else if (d.type === 'bg') { applyBg(d.bg); updateBgVisibility(); }
       else if (d.type === 'lyrics') { setLyrics(d.text, d.size); updateBgVisibility(); }
       else if (d.type === 'css') setCss(d.css);
+      else if (d.type === 'badge') setBadgeMode(d.mode);
     };
     ws.onclose = function () {
       dot.className = ''; idleText.textContent = 'Procurando o PC...';
+      connected = false; renderBadge();
       setTimeout(connect, 2000);
     };
     ws.onerror = function () { try { ws.close(); } catch (e) {} };
@@ -217,6 +257,7 @@
     }
   }, 1000);
 
+  renderBadge();
   connect();
 })();
 </script>
