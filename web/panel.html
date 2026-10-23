@@ -57,7 +57,8 @@
 </header>
 <main>
   <div class="now">
-    <div class="t"><small>Projetando agora</small><span id="nowText">Nada (TV em espera)</span></div>
+    <div class="t"><small>Projetando agora</small><span id="nowText">Nada (TV em espera)</span>
+      <small id="perf" style="display:block;margin-top:4px"></small></div>
     <label class="row"><small style="margin:0">Qualidade da tela</small>
       <select id="quality">
         <option value="minima">Mínima (640px)</option>
@@ -71,6 +72,12 @@
         <option value="auto">Automático (só ao conectar/cair)</option>
         <option value="always">Sempre visível</option>
         <option value="never">Nunca</option>
+      </select>
+    </label>
+    <label class="row"><small style="margin:0">Captura de janela</small>
+      <select id="wmethod">
+        <option value="direct">Direta (pode ficar atrás de outras)</option>
+        <option value="region">Região da tela (mais leve; janela visível)</option>
       </select>
     </label>
     <button class="danger" id="stop">Parar projeção</button>
@@ -248,6 +255,7 @@ function render() {
   if (document.activeElement !== $('#bgSound')) $('#bgSound').checked = st.bg_muted === false;
   if (document.activeElement !== $('#quality')) $('#quality').value = st.quality || 'normal';
   $('#vc').className = st.mode === 'video' ? 'show' : '';
+  if (st.mode !== 'screen' && st.mode !== 'window') $('#perf').textContent = '';
   var p = st.progress || {};
   if (st.mode === 'video' && p.d !== undefined) {
     $('#time').textContent = fmt(p.t) + ' / ' + fmt(p.d);
@@ -262,6 +270,10 @@ function connect() {
     var d = JSON.parse(e.data);
     if (d.type === 'status') { st = d; render(); }
     else if (d.type === 'toast') toast(d.text);
+    else if (d.type === 'perf') {
+      $('#perf').textContent = d.how + ' · chegam ' + d.cap + ' q/s (leitura ' + d.cb_ms + ' ms) · codifica ' + d.enc + ' q/s (' + d.enc_ms +
+        ' ms) · envia ' + d.send + ' q/s · atraso interno ' + d.age + ' ms · ' + d.kb + ' KB/quadro';
+    }
   };
   ws.onclose = function () { setTimeout(connect, 1500); };
 }
@@ -272,6 +284,7 @@ function loadSettings() {
   api('/api/settings').then(function (d) {
     if (!cssDirty && document.activeElement !== $('#cssText')) $('#cssText').value = d.css || '';
     if (document.activeElement !== $('#badge')) $('#badge').value = d.badge || 'auto';
+    if (document.activeElement !== $('#wmethod')) $('#wmethod').value = d.wmethod || 'direct';
     var list = $('#urlList'); list.innerHTML = '';
     (d.urls || []).forEach(function (u) {
       list.appendChild(btn('🌐 ' + u, function () { $('#urlIn').value = u; showUrl(u); }));
@@ -284,6 +297,7 @@ $('#urlIn').onkeydown = function (e) { if (e.key === 'Enter') $('#urlGo').click(
 $('#urlReload').onclick = function () { ctrl('reload'); };
 $('#cssText').oninput = function () { cssDirty = true; };
 $('#badge').onchange = function () { api('/api/badge', { mode: this.value }); };
+$('#wmethod').onchange = function () { api('/api/wmethod', { mode: this.value }); toast('Escolha a janela de novo para aplicar.'); };
 $('#cssApply').onclick = function () {
   api('/api/css', { css: $('#cssText').value }).then(function () { cssDirty = false; toast('CSS aplicado na TV.'); });
 };

@@ -56,6 +56,7 @@ state = {
     "page": "",            # URL mostrada na TV (modo "url")
     "css": "",             # CSS personalizado (página + letra)
     "badge": "auto",       # selo TV CAST + status na TV: auto | always | never
+    "wmethod": "direct",   # captura de janela: direct (estilo OBS) | region (cópia da tela, mais leve)
 }
 FILES = {}                 # id -> Path (só o que foi escolhido no painel é servido)
 clients = {"tv": set(), "panel": set()}
@@ -197,6 +198,10 @@ def focus_window(wid):
 
 
 # ---------------------------------------------------------------- captura direta de janela
+# Medições (aparecem no painel e no console): onde o tempo está indo.
+STATS = {"cap": 0, "cb_ms": 0.0, "enc": 0, "enc_ms": 0.0, "sent": 0, "age": 0.0, "kb": 0.0}
+
+
 class WindowGrabber:
     """Captura UMA janela pelo Windows Graphics Capture (como o OBS).
     Independe do que está na frente (Alt+Tab, menu Iniciar, outras janelas).
@@ -212,6 +217,7 @@ class WindowGrabber:
         self.enc_seq = 0
         self.jpeg = b""
         self.t_enc = 0.0
+        self.enc_ta = time.time()
         self.control = None
         self.how = ""
 
@@ -237,6 +243,7 @@ class WindowGrabber:
     def _bind(self, cap):
         @cap.event
         def on_frame_arrived(frame, control):
+            t_cb = time.perf_counter()
             try:
                 buf = frame.frame_buffer
                 h, w = int(buf.shape[0]), int(buf.shape[1])
@@ -244,8 +251,10 @@ class WindowGrabber:
                     return
                 data = buf.tobytes()
                 with self.lock:
-                    self.raw = (w, h, data)
+                    self.raw = (w, h, data, time.time())
                     self.raw_seq += 1
+                STATS["cap"] += 1
+                STATS["cb_ms"] += (time.perf_counter() - t_cb) * 1000
             except Exception as e:
                 print("Erro no quadro da janela:", e)
 
@@ -264,6 +273,7 @@ class WindowGrabber:
     def snapshot(self):
         """(jpeg, número do quadro). Codifica no ritmo do preset; devolve o último se nada mudou."""
         width, quality, fps = PRESETS[state["quality"]]
+        fps = max(fps, 15)   # letra/slide: troca rara, então codificar até 15/s custa pouco e reduz o atraso
         with self.lock:
             raw, rseq = self.raw, self.raw_seq
         if raw is None or rseq == self.enc_seq or time.time() - self.t_enc < 1.0 / fps:
@@ -271,7 +281,8 @@ class WindowGrabber:
         if not self.enc_lock.acquire(blocking=False):
             return self.jpeg, self.enc_seq
         try:
-            w, h, data = raw
+            t_e = time.perf_counter()
+            w, h, data, ta = raw
             img = Image.frombytes("RGB", (w, h), data, "raw", "BGRX")
             if img.width > width:
                 img = img.resize((width, max(2, int(img.height * width / img.width))),
@@ -281,6 +292,10 @@ class WindowGrabber:
             self.jpeg = out.getvalue()
             self.enc_seq = rseq
             self.t_enc = time.time()
+            self.enc_ta = ta
+            STATS["enc"] += 1
+            STATS["enc_ms"] += (time.perf_counter() - t_e) * 1000
+            STATS["kb"] = 0.7 * STATS["kb"] + 0.3 * len(self.jpeg) / 1024
         finally:
             self.enc_lock.release()
         return self.jpeg, self.enc_seq
@@ -388,13 +403,15 @@ def load_settings():
         d = {}
     state["css"] = str(d.get("css", ""))
     state["badge"] = d.get("badge") if d.get("badge") in ("auto", "always", "never") else "auto"
+    state["wmethod"] = d.get("wmethod") if d.get("wmethod") in ("direct", "region") else "direct"
     RECENT_URLS[:] = [u for u in d.get("urls", []) if isinstance(u, str)][:10]
 
 
 def save_settings():
     try:
         SETTINGS_FILE.write_text(
-            json.dumps({"css": state["css"], "urls": RECENT_URLS, "badge": state["badge"]}, ensure_ascii=False, indent=1),
+            json.dumps({"css": state["css"], "urls": RECENT_URLS, "badge": state["badge"],
+                        "wmethod": state["wmethod"]}, ensure_ascii=False, indent=1),
             encoding="utf-8")
     except Exception as e:
         print("Não consegui salvar settings.json:", e)
@@ -557,16 +574,26 @@ async def stream(request):
             if g is not None:
                 frame, seq = await loop.run_in_executor(None, g.snapshot)
                 if not frame or (seq == last_seq and t0 - last_write < 2.0):
-                    await asyncio.sleep(0.02)   # janela parada: não reenvia o mesmo quadro
+                    await asyncio.sleep(0.01)   # janela parada: não reenvia o mesmo quadro
                     continue
+                fresh = seq != last_seq
                 last_seq = seq
             else:
+                fresh = False
+                tg = time.time()
                 frame = await loop.run_in_executor(CAPTURE_POOL, get_frame)
+                STATS["enc"] += 1
+                STATS["enc_ms"] += (time.time() - tg) * 1000
             last_write = time.time()
             head = b"Content-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n" % len(frame)
             # O delimitador do PRÓXIMO quadro já vai junto: o navegador exibe este quadro na hora,
             # sem esperar o quadro seguinte (que numa janela parada pode demorar segundos).
             await resp.write(head + frame + b"\r\n--frame\r\n")
+            STATS["sent"] += 1
+            if g is not None:
+                if fresh:   # atraso interno: do quadro chegar até sair pela rede
+                    STATS["age"] = 0.7 * STATS["age"] + 0.3 * (time.time() - g.enc_ta) * 1000
+                continue    # o ritmo já é limitado na codificação: não dorme depois de enviar
             fps = PRESETS[state["quality"]][2]
             wait = 1.0 / fps - (time.time() - t0)
             if wait > 0:
@@ -678,7 +705,7 @@ async def api_show(request):
         wid = d.get("id")
         title = d.get("title") or ""
         grab, why = None, ""
-        if WGC_OK:
+        if WGC_OK and state["wmethod"] == "direct":
             await loop.run_in_executor(None, restore_if_minimized, wid)
             grab, why = await loop.run_in_executor(None, start_grabber, wid, title)
             if grab:
@@ -698,7 +725,8 @@ async def api_show(request):
             print("Janela escolhida:", title, "-> captura por região:", rect, "|", why or "windows-capture não instalado")
             msg = ("Captura direta indisponível (%s). Usando a região da tela: a janela precisa ficar visível. "
                    "Rode o run.bat de novo para instalar o windows-capture." % (why or "pacote não instalado"))
-            await broadcast("panel", {"type": "toast", "text": msg})
+            if state["wmethod"] == "direct" or not WGC_OK:
+                await broadcast("panel", {"type": "toast", "text": msg})
         state.update(mode="window", source={"kind": "window", "id": wid},
                      name=d.get("title") or "Janela", file_id=None)
     elif mode in ("file", "video", "image"):
@@ -786,12 +814,45 @@ async def window_watch():
             print("Erro ao vigiar a janela:", e)
 
 
+async def perf_loop():
+    """A cada 2 s manda as medições ao painel; a cada 6 s também escreve no console."""
+    last = dict(STATS)
+    t_last = time.time()
+    n = 0
+    while True:
+        await asyncio.sleep(2)
+        try:
+            now = time.time()
+            dt = max(0.1, now - t_last)
+            t_last = now
+            d = {k: STATS[k] - last[k] for k in ("cap", "enc", "enc_ms", "sent", "cb_ms")}
+            last = dict(STATS)
+            if state["mode"] not in ("screen", "window"):
+                continue
+            direct = state["mode"] == "window" and GRAB["g"] is not None
+            perf = {"how": "janela direta" if direct else ("janela por região" if state["mode"] == "window" else "tela inteira"),
+                    "cap": round(d["cap"] / dt), "enc": round(d["enc"] / dt), "send": round(d["sent"] / dt),
+                    "cb_ms": round(d["cb_ms"] / max(1, d["cap"]), 1), "enc_ms": round(d["enc_ms"] / max(1, d["enc"])),
+                    "age": round(STATS["age"]), "kb": round(STATS["kb"])}
+            await broadcast("panel", {"type": "perf", **perf})
+            n += 1
+            if n % 3 == 0:
+                print("[medição] %(how)s | chegam %(cap)s q/s (leitura %(cb_ms)s ms) | codifica %(enc)s q/s (%(enc_ms)s ms) "
+                      "| envia %(send)s q/s | atraso interno %(age)s ms | %(kb)s KB/quadro" % perf)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            print("Erro nas medições:", e)
+
+
 async def _start_watch(app):
     app["watch"] = asyncio.create_task(window_watch())
+    app["perf"] = asyncio.create_task(perf_loop())
 
 
 async def _stop_watch(app):
     app["watch"].cancel()
+    app["perf"].cancel()
 
 
 async def api_lyrics(request):
@@ -825,8 +886,17 @@ async def api_badge(request):
     return web.json_response({"ok": True})
 
 
+async def api_wmethod(request):
+    d = await request.json()
+    if d.get("mode") in ("direct", "region"):
+        state["wmethod"] = d["mode"]
+        save_settings()
+    return web.json_response({"ok": True})
+
+
 async def api_settings(request):
-    return web.json_response({"css": state["css"], "urls": RECENT_URLS, "badge": state["badge"]})
+    return web.json_response({"css": state["css"], "urls": RECENT_URLS, "badge": state["badge"],
+                             "wmethod": state["wmethod"]})
 
 
 async def api_quality(request):
@@ -860,6 +930,7 @@ def make_app():
         web.post("/api/lyrics", api_lyrics),
         web.post("/api/css", api_css),
         web.post("/api/badge", api_badge),
+        web.post("/api/wmethod", api_wmethod),
         web.get("/api/settings", api_settings),
     ])
     return app
