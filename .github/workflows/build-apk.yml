@@ -3,7 +3,11 @@ name: Build APK
 on:
   push:
     branches: [main, master]
+    tags: ['v*']
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -28,3 +32,11 @@ jobs:
         with:
           name: TVCast-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Publicar na aba Releases
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk TVCast-${GITHUB_REF_NAME}.apk
+          gh release create "$GITHUB_REF_NAME" "TVCast-${GITHUB_REF_NAME}.apk" --title "TV Cast ${GITHUB_REF_NAME}" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
