@@ -37,13 +37,13 @@ jobs:
         run: |
           VER=$(grep -oP 'versionName "\K[^"]+' android/app/build.gradle)
           TAG="1.0"
-          cp android/app/build/outputs/apk/debug/app-debug.apk "TVCast-$VER.apk"
+          cp android/app/build/outputs/apk/debug/app-debug.apk TVCast.apk
           # mantém a tag 1.0 sempre no commit mais recente
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" -f sha="$GITHUB_SHA" -F force=true || true
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "TVCast-$VER.apk" --clobber
+            gh release upload "$TAG" TVCast.apk --clobber
           else
-            gh release create "$TAG" "TVCast-$VER.apk" --title "TV Cast" --notes "APK mais recente do TV Cast."
+            gh release create "$TAG" TVCast.apk --title "TV Cast" --notes "APK mais recente do TV Cast."
           fi
         env:
           GH_TOKEN: ${{ github.token }}
