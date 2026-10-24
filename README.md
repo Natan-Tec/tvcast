@@ -65,3 +65,9 @@ A janela é capturada diretamente (Windows Graphics Capture): pode ficar atrás 
 - `server.py`, `web/` — servidor, painel (`panel.html`) e página da TV (`tv.html`)
 - `media/` — arquivos de atalho que aparecem no painel
 - `android/` — projeto do APK (WebView em tela cheia + tela de IP)
+
+## Site
+
+Página de divulgação (GitHub Pages, pasta `docs/`): https://natan-tec.github.io/tvcast/
+
+Downloads: [APK](https://github.com/Natan-Tec/tvcast/releases/download/1.0/TVCast.apk) · [Servidor para o PC](https://github.com/Natan-Tec/tvcast/releases/download/1.0/TVCast-Server.zip)
