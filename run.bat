@@ -13,6 +13,6 @@ if not exist .venv (
   call .venv\Scripts\python.exe -m pip install -r requirements.txt
 )
 .venv\Scripts\python.exe -m pip install -q -r requirements.txt
-start "" http://localhost:8765
-.venv\Scripts\python.exe server.py
-pause
+rem Roda sem janela de terminal: o TV Cast fica na bandeja (perto do relogio).
+rem Para ver as mensagens no terminal, use: .venv\Scripts\python.exe server.py --console
+start "" .venv\Scripts\pythonw.exe server.py

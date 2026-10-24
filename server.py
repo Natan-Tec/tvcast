@@ -938,17 +938,140 @@ def make_app():
     return app
 
 
+# ---------------------------------------------------------------- bandeja / iniciar com o Windows
+AUTOSTART_NAME = "TVCast"
+RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+LOG_FILE = BASE / "tvcast.log"
+
+
+def _gui_python():
+    """pythonw.exe (sem janela de terminal) ao lado do python atual, se existir."""
+    exe = Path(sys.executable)
+    w = exe.with_name("pythonw.exe")
+    return str(w if w.exists() else exe)
+
+
+def autostart_enabled():
+    if not IS_WIN:
+        return False
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
+            winreg.QueryValueEx(k, AUTOSTART_NAME)
+            return True
+    except OSError:
+        return False
+
+
+def set_autostart(on):
+    if not IS_WIN:
+        return
+    import winreg
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
+        if on:
+            cmd = '"%s" "%s" --background' % (_gui_python(), Path(__file__).resolve())
+            winreg.SetValueEx(k, AUTOSTART_NAME, 0, winreg.REG_SZ, cmd)
+        else:
+            try:
+                winreg.DeleteValue(k, AUTOSTART_NAME)
+            except FileNotFoundError:
+                pass
+
+
+def _tray_image():
+    """Ícone da bandeja desenhado na hora (azul com triângulo de play)."""
+    from PIL import ImageDraw
+    size = 64
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle((2, 2, size - 3, size - 3), radius=14, fill=(21, 150, 219, 255))
+    d.polygon([(24, 18), (24, 46), (48, 32)], fill=(255, 255, 255, 255))
+    return img
+
+
+def already_running():
+    """True se já existe um TV Cast ouvindo nesta porta."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:%d/ping" % PORT, timeout=1.5) as r:
+            return r.read().strip() == b"tvcast"
+    except Exception:
+        return False
+
+
+def open_panel():
+    import webbrowser
+    webbrowser.open("http://localhost:%d" % PORT)
+
+
+def start_tray():
+    """Mostra o ícone na bandeja. Devolve False se não for possível (cai no modo terminal)."""
+    try:
+        import pystray
+    except Exception:
+        return False
+
+    def on_open(icon, item):
+        open_panel()
+
+    def on_autostart(icon, item):
+        try:
+            set_autostart(not autostart_enabled())
+        except Exception as e:
+            print("Não consegui mudar a inicialização com o Windows:", e)
+
+    def on_quit(icon, item):
+        icon.stop()
+        os._exit(0)          # settings.json já é salvo a cada mudança
+
+    menu = pystray.Menu(
+        pystray.MenuItem("Abrir painel", on_open, default=True),
+        pystray.MenuItem("Na TV: %s:%d" % (lan_ip(), PORT), None, enabled=False),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Iniciar com o Windows", on_autostart,
+                         checked=lambda item: autostart_enabled(), visible=IS_WIN),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Sair", on_quit),
+    )
+    icon = pystray.Icon("tvcast", _tray_image(), "TV Cast", menu)
+    icon.run_detached()
+    return True
+
+
+def _quiet_logging():
+    """Sem terminal (pythonw) não existe stdout: manda as mensagens para tvcast.log."""
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    try:
+        if LOG_FILE.exists() and LOG_FILE.stat().st_size > 1024 * 1024:
+            LOG_FILE.unlink()
+        f = open(LOG_FILE, "a", encoding="utf-8", buffering=1)
+    except OSError:
+        f = open(os.devnull, "w")
+    sys.stdout = sys.stderr = f
+
+
 if __name__ == "__main__":
+    _quiet_logging()
+    background = "--background" in sys.argv
+    console = "--console" in sys.argv
     if Image is None:
         sys.exit("Falta instalar: pip install -r requirements.txt")
+    if already_running():                # segundo clique no atalho: só abre o painel
+        if not background:
+            open_panel()
+        sys.exit(0)
     ip = lan_ip()
+    tray = False if console else start_tray()
     print("=" * 56)
     print(" TV Cast rodando")
     print(f" Painel (abra no PC):   http://localhost:{PORT}")
     print(f" Na TV, digite o IP:    {ip}:{PORT}")
     print(" Captura de janela:     " + ("direta (estilo OBS)" if WGC_OK else
           "por região (instale: pip install windows-capture)" if IS_WIN else "por região"))
-    print(" Para parar: Ctrl+C")
+    print(" Para parar: " + ("ícone da bandeja > Sair" if tray else "Ctrl+C"))
     print("=" * 56)
     start_discovery()
+    if not background:
+        open_panel()
     web.run_app(make_app(), host="0.0.0.0", port=PORT, print=None)

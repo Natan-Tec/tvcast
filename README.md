@@ -12,6 +12,9 @@ PC  (server.py + painel em http://localhost:8765)  ──Wi-Fi/cabo──▶  TV
 1. Instale o Python 3.9+ (no instalador marque "Add Python to PATH").
 2. Dê dois cliques em `run.bat` (Linux: `./run.sh`). Na primeira vez ele instala as dependências.
 3. O painel abre sozinho em `http://localhost:8765` e mostra "Na TV digite: 192.168.x.x:8765".
+   No Windows não fica terminal aberto: o TV Cast vai para a **bandeja** (ícone azul com play, perto do relógio; pode estar em "^" ícones ocultos).
+   Clique com o botão direito: **Abrir painel**, **Iniciar com o Windows** (marque para abrir sozinho ao ligar o PC, sem abrir o navegador) e **Sair**. Clicar de novo no `run.bat` só reabre o painel.
+   Mensagens e erros ficam em `tvcast.log`. Para ver no terminal: `.venv\Scripts\python.exe server.py --console`.
 4. Se o Firewall do Windows perguntar, permita em **redes privadas**.
 
 ## 2. Gerar o APK da TV
