@@ -23,7 +23,8 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
-import android.widget.TextView;
+import android.widget.ImageView;
+import android.util.DisplayMetrics;
 
 import org.json.JSONObject;
 
@@ -54,7 +55,7 @@ public class MainActivity extends Activity {
     private FrameLayout root;
     private WebView web;          // página do TV Cast (controlada pelo PC)
     private WebView pageView;     // site mostrado por cima (sem a ponte Android); criada sob demanda
-    private TextView badge;
+    private ImageView badge;   // marca d'água (logo)
     private String pageCss = "";
     private SharedPreferences prefs;
     private boolean onSetup = true;
@@ -74,19 +75,19 @@ public class MainActivity extends Activity {
         root.addView(web, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-        badge = new TextView(this);
-        badge.setTextColor(Color.WHITE);
-        badge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-        badge.setPadding(dp(18), dp(7), dp(18), dp(7));
-        GradientDrawable bgd = new GradientDrawable();
-        bgd.setColor(0xB8000000);
-        bgd.setCornerRadius(dp(20));
-        badge.setBackground(bgd);
+        badge = new ImageView(this);
+        badge.setImageResource(R.drawable.watermark);
+        badge.setAlpha(0.5f);
+        badge.setAdjustViewBounds(true);
         badge.setVisibility(View.GONE);
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        int sw = Math.max(dm.widthPixels, 1), sh = Math.max(dm.heightPixels, 1);
+        int stageW = Math.min(sw, sh * 16 / 9);
         FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        blp.bottomMargin = dp(22);
+                (int) (stageW * 0.084f), ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM | Gravity.RIGHT);
+        blp.rightMargin = (int) (stageW * 0.027f);
+        blp.bottomMargin = (int) (stageW * 0.0375f);
         root.addView(badge, blp);
         setContentView(root);
 
@@ -155,15 +156,7 @@ public class MainActivity extends Activity {
 
     // ------------------------------------------------------------ selo TV CAST + status
     private void setBadge(boolean show, String text, boolean ok) {
-        if (!show) {
-            badge.setVisibility(View.GONE);
-            return;
-        }
-        SpannableString sp = new SpannableString("\u25CF  " + text);
-        sp.setSpan(new ForegroundColorSpan(ok ? 0xFF33C27F : 0xFFE5534B), 0, 1,
-                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
-        badge.setText(sp);
-        badge.setVisibility(View.VISIBLE);
+        badge.setVisibility(show ? View.VISIBLE : View.GONE);
     }
 
     // ------------------------------------------------------------ página da web por cima

@@ -512,6 +512,7 @@ async def push_status():
         "progress": progress,
         "bg_name": state["bg"]["name"] if state["bg"] else "",
         "bg_muted": state["bg"]["muted"] if state["bg"] else True,
+        "bg_url": (bg_payload() or {}).get("url", ""),
     })
 
 
@@ -525,7 +526,7 @@ async def push_state():
 async def guard(request, handler):
     p = request.path
     public = (
-        p.startswith(("/tv", "/file/", "/stream", "/ping"))
+        p.startswith(("/tv", "/file/", "/stream", "/ping", "/assets"))
         or (p == "/ws" and request.query.get("role") == "tv")
     )
     if not public and not ALLOW_REMOTE_PANEL and not is_loopback(request.remote or ""):
@@ -910,6 +911,7 @@ async def api_quality(request):
 def make_app():
     load_settings()
     app = web.Application(middlewares=[guard], client_max_size=1024 ** 2)
+    app.router.add_static("/assets", WEB / "assets", follow_symlinks=False)
     app.on_startup.append(_start_watch)
     app.on_cleanup.append(_stop_watch)
     app.add_routes([

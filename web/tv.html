@@ -5,30 +5,40 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>TV Cast</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; cursor: none;
-    font-family: Arial, Helvetica, sans-serif; color: #fff; }
-  #img, #vid, #bgvid { position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-    object-fit: contain; background: #000; display: none; }
-  #idle { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex;
-    flex-direction: column; align-items: center; justify-content: center; text-align: center; }
-  #idle h1 { font-size: 64px; margin: 0 0 14px 0; letter-spacing: 2px; }
-  #idle p { font-size: 26px; margin: 0; color: #9aa4b2; }
-  #dot { display: inline-block; width: 16px; height: 16px; border-radius: 50%;
-    background: #e5534b; margin-right: 10px; }
-  #dot.on { background: #33c27f; }
-  #badge { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); display: none;
-    padding: 8px 20px; border-radius: 22px; background: rgba(0,0,0,.72); font-size: 20px;
-    letter-spacing: 1px; white-space: nowrap; z-index: 50; }
-  #badge i { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 10px;
-    background: #e5534b; }
-  #badge.ok i { background: #33c27f; }
-  #msg { position: absolute; left: 0; right: 0; bottom: 40px; text-align: center; font-size: 28px;
-    background: rgba(0,0,0,.7); padding: 12px; display: none; }
-  #lyr { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none;
-    align-items: center; justify-content: center; text-align: center; }
-  #lyrIn { display: inline-block; max-width: 92%; font-weight: bold; color: #fff; line-height: 1.25;
-    white-space: pre-wrap; word-wrap: break-word;
-    text-shadow: 0 0 8px #000, 0 0 16px #000, 2px 2px 4px #000, -2px -2px 4px #000; }
+  @font-face { font-family: "Inter"; font-weight: 400; src: url("/assets/fonts/Inter-Regular.otf") format("opentype"), local("Inter"); }
+  @font-face { font-family: "Inter"; font-weight: 600; src: url("/assets/fonts/Inter-SemiBold.otf") format("opentype"), local("Inter SemiBold"); }
+  @font-face { font-family: "Inter"; font-weight: 700; src: url("/assets/fonts/Inter-Bold.otf") format("opentype"), local("Inter Bold"); }
+
+  /* Tema (cores do Figma/logo). --w = largura de um palco 16:9 que cabe na tela; os tamanhos da espera seguem o desenho. */
+  :root {
+    --bg: #10141B;            /* fundo da tela de espera */
+    --text: #FFFFFF;
+    --black: #000000;         /* fundo de mídia (vídeo, imagem, tela) */
+    --overlay: rgba(0, 0, 0, .72);
+    --shadow-text: #000000;
+    --mark-opacity: .5;
+    --font: "Inter", "Segoe UI", Roboto, Arial, sans-serif;
+    --w: 100vw;
+  }
+  html, body { margin: 0; height: 100%; background: var(--black); overflow: hidden; cursor: none; font-family: var(--font); color: var(--text); }
+  #img, #vid, #bgvid { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; background: var(--black); display: none; }
+
+  /* Espera / desconectado (TV_DESCONECTADO do Figma) */
+  #idle { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; text-align: center; background: var(--bg); }
+  #idle .ico { height: calc(var(--w) * .343); width: auto; display: block; }
+  #idle .wm { width: calc(var(--w) * .236); height: auto; display: block; margin-top: calc(var(--w) * .004); }
+  #idle .by { margin-top: calc(var(--w) * .005); font-size: calc(var(--w) * .0105); font-weight: 600; letter-spacing: .02em; }
+  #idle .st { margin-top: calc(var(--w) * .06); font-size: calc(var(--w) * .0206); font-weight: 400; }
+
+  /* Marca d'água (TV_COM_MARCA_DAGUA do Figma): canto inferior direito */
+  #mark { position: absolute; right: calc(var(--w) * .027); bottom: calc(var(--w) * .0375); width: calc(var(--w) * .084); height: auto;
+    opacity: var(--mark-opacity); display: none; z-index: 50; }
+
+  #msg { position: absolute; left: 0; right: 0; bottom: 40px; text-align: center; font-size: 28px; background: var(--overlay); padding: 12px; display: none; z-index: 60; }
+  #lyr { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; align-items: center; justify-content: center; text-align: center; }
+  #lyrIn { display: inline-block; max-width: 92%; font-weight: 700; color: var(--text); line-height: 1.25; white-space: pre-wrap; word-wrap: break-word;
+    text-shadow: 0 0 8px var(--shadow-text), 0 0 16px var(--shadow-text), 2px 2px 4px var(--shadow-text), -2px -2px 4px var(--shadow-text); }
 </style>
 </head>
 <body>
@@ -36,67 +46,68 @@
 <video id="bgvid" playsinline loop muted></video>
 <img id="img" alt="">
 <video id="vid" playsinline></video>
-<iframe id="frame" style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;background:#000;display:none"></iframe>
+<iframe id="frame" style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;display:none"></iframe>
 <div id="idle">
-  <h1>TV Cast</h1>
-  <p><span id="dot"></span><span id="idleText">Procurando o PC...</span></p>
+  <img class="ico" src="/assets/icon.svg" alt="">
+  <img class="wm" src="/assets/wordmark.svg" alt="TV CAST">
+  <div class="by">By Pixel Shell</div>
+  <div class="st" id="idleText">Procurando o PC...</div>
 </div>
 <div id="lyr"><div id="lyrIn"></div></div>
-<div id="badge"><i></i><span id="badgeText"></span></div>
+<img id="mark" src="/assets/icon-white.svg" alt="">
 <div id="msg"></div>
 <script>
 (function () {
   var img = document.getElementById('img');
   var vid = document.getElementById('vid');
-  var idle = document.getElementById('idle');
-  var dot = document.getElementById('dot');
-  var idleText = document.getElementById('idleText');
-  var msg = document.getElementById('msg');
-  var ws = null, cur = { mode: 'blank' }, msgTimer = null;
   var bgvid = document.getElementById('bgvid');
+  var frame = document.getElementById('frame');
+  var idle = document.getElementById('idle');
+  var idleText = document.getElementById('idleText');
+  var lyr = document.getElementById('lyr'), lyrIn = document.getElementById('lyrIn');
+  var mark = document.getElementById('mark');
+  var msg = document.getElementById('msg');
+  var customCss = document.getElementById('customCss');
+
+  var ws = null, cur = { mode: 'blank' }, msgTimer = null;
   var bg = null, bgUrl = '';
   var LITE = /[?&]lite=1/.test(location.search);   // monitor leve: sem vídeo de fundo
-  var lyr = document.getElementById('lyr'), lyrIn = document.getElementById('lyrIn');
   var lyrOn = false, lyrScale = 1;
-  var frame = document.getElementById('frame');
-  var customCss = document.getElementById('customCss');
   var curCss = '', pageShown = false;
   // No app da TV a página abre numa tela nativa (sem bloqueio de iframe e com CSS injetado).
   var NATIVE = (typeof window.Android !== 'undefined') && (typeof window.Android.showUrl === 'function');
+  var NATIVE_MARK = (typeof window.Android !== 'undefined') && (typeof window.Android.setBadge === 'function');
+  var connected = false, markMode = 'auto', idleOn = true;   // never | always | auto ("Até Conectar")
+  try { markMode = localStorage.getItem('tvBadge') || 'auto'; } catch (e) {}
 
-  // Selo "TV CAST" + status da conexão (auto: some depois de 5 s, mas fica se cair; always; never).
-  var connected = false, badgeMode = 'auto', badgeUntil = 0, badgeTimer = null;
-  try { badgeMode = localStorage.getItem('tvBadge') || 'auto'; } catch (e) {}
-  var badgeEl = document.getElementById('badge'), badgeText = document.getElementById('badgeText');
-  var NATIVE_BADGE = (typeof window.Android !== 'undefined') && (typeof window.Android.setBadge === 'function');
+  function sizeStage() {
+    var w = Math.min(window.innerWidth, window.innerHeight * 16 / 9);
+    document.documentElement.style.setProperty('--w', w + 'px');
+  }
+  sizeStage();
 
-  function renderBadge() {
-    var text = connected ? 'TV CAST \u00b7 Conectado' : 'TV CAST \u00b7 Reconectando ao PC...';
-    var visible = badgeMode === 'always' || (badgeMode === 'auto' && (!connected || Date.now() < badgeUntil));
-    if (NATIVE_BADGE) { try { Android.setBadge(visible, text, connected); } catch (e) {} }
-    badgeEl.style.display = (visible && !NATIVE_BADGE) ? 'block' : 'none';
-    badgeEl.className = connected ? 'ok' : '';
-    badgeText.textContent = text;
+  function show(el, on) { el.style.display = on ? 'block' : 'none'; }
+  function setIdle(on) { idleOn = on; idle.style.display = on ? 'flex' : 'none'; renderMark(); }
+
+  // Marca d'água: Sempre = sempre; Até Conectar = só enquanto a conexão com o PC está caída; Nunca = nunca.
+  // Na tela de espera a logo grande já aparece, então a marca d'água fica escondida.
+  function renderMark() {
+    var visible = (markMode === 'always' || (markMode === 'auto' && !connected)) && !idleOn;
+    if (NATIVE_MARK) { try { Android.setBadge(visible, '', connected); } catch (e) {} }
+    mark.style.display = (visible && !NATIVE_MARK) ? 'block' : 'none';
   }
-  function flashBadge() {
-    badgeUntil = Date.now() + 5000; renderBadge();
-    clearTimeout(badgeTimer); badgeTimer = setTimeout(renderBadge, 5100);
-  }
-  function setBadgeMode(m) {
+  function setMarkMode(m) {
     if (m !== 'auto' && m !== 'always' && m !== 'never') m = 'auto';
-    badgeMode = m;
+    markMode = m;
     try { localStorage.setItem('tvBadge', m); } catch (e) {}
-    renderBadge();
+    renderMark();
   }
-
-  function show(el, on) { el.style.display = on ? (el === idle ? 'flex' : 'block') : 'none'; }
 
   function toast(t) {
     msg.textContent = t; msg.style.display = 'block';
     clearTimeout(msgTimer);
     msgTimer = setTimeout(function () { msg.style.display = 'none'; }, 6000);
   }
-
   function send(o) { try { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); } catch (e) {} }
 
   function clearMedia() {
@@ -112,12 +123,10 @@
     if (NATIVE) { try { Android.showUrl(url, curCss); } catch (e) {} }
     else { frame.src = url; show(frame, true); }
   }
-
   function hidePage() {
     if (NATIVE) { try { Android.hideUrl(); } catch (e) {} }
     else { frame.removeAttribute('src'); show(frame, false); }
   }
-
   function setCss(css) {
     curCss = css || '';
     customCss.textContent = curCss;
@@ -132,15 +141,13 @@
       size -= 2; lyrIn.style.fontSize = size + 'px';
     }
   }
-
   function setLyrics(text, size) {
     lyrScale = size || 1;
     lyrOn = !!text;
     if (!text) { lyr.style.display = 'none'; lyrIn.textContent = ''; return; }
     lyrIn.textContent = text; lyr.style.display = 'flex'; fitLyrics();
   }
-
-  window.addEventListener('resize', function () { if (lyrOn) fitLyrics(); });
+  window.addEventListener('resize', function () { sizeStage(); if (lyrOn) fitLyrics(); });
 
   // Fundo em loop: só troca o src se o arquivo mudou (assim retoma de onde parou).
   function applyBg(b) {
@@ -160,13 +167,13 @@
   function updateBgVisibility() {
     var fg = cur.mode && cur.mode !== 'blank';
     if (bg && !fg) {
-      show(idle, false); show(bgvid, true);
+      setIdle(false); show(bgvid, true);
       var p = bgvid.play();
       if (p && p.catch) p.catch(function () { bgvid.muted = true; bgvid.play(); });
     } else {
       try { bgvid.pause(); } catch (e) {}
       show(bgvid, false);
-      if (!fg) show(idle, !lyrOn);
+      if (!fg) setIdle(!lyrOn);
     }
   }
 
@@ -175,31 +182,29 @@
     var keepPage = (s.mode === 'url' && pageShown && cur.mode === 'url' && cur.rev === s.rev);
     cur = s;
     if (!keepPage) clearMedia();
-    if (s.badge) setBadgeMode(s.badge);
+    if (s.badge) setMarkMode(s.badge);
     applyBg(s.bg || null);
     setLyrics(s.lyrics ? s.lyrics.text : '', s.lyrics ? s.lyrics.size : 1);
     curCss = s.css || ''; customCss.textContent = curCss;
     if (keepPage && NATIVE) { try { Android.setCss(curCss); } catch (e) {} }
     if (s.mode === 'screen' || s.mode === 'window') {
-      show(idle, false); show(img, true);
+      setIdle(false); show(img, true);
       img.onerror = function () {
-        setTimeout(function () {
-          if (cur === s) img.src = s.url + '&x=' + Date.now();
-        }, 1000);
+        setTimeout(function () { if (cur === s) img.src = s.url + '&x=' + Date.now(); }, 1000);
       };
       img.src = s.url;
     } else if (s.mode === 'url') {
-      show(idle, false);
+      setIdle(false);
       if (!keepPage) { showPage(s.page); pageShown = true; }
     } else if (s.mode === 'image') {
-      show(idle, false); show(img, true); img.src = s.url;
+      setIdle(false); show(img, true); img.src = s.url;
     } else if (s.mode === 'video') {
-      show(idle, false); show(vid, true);
+      setIdle(false); show(vid, true);
       vid.src = s.url;
       var p = vid.play();
       if (p && p.catch) p.catch(function () { vid.muted = true; vid.play(); });
     } else {
-      show(idle, true);
+      setIdle(true);
     }
     updateBgVisibility();
   }
@@ -226,13 +231,16 @@
     else if (a === 'mute') vid.muted = !vid.muted;
   }
 
+  function setConnected(on) {
+    connected = on;
+    idleText.textContent = on ? 'Conectado ao PC' : 'Procurando o PC...';
+    renderMark();
+  }
+
   function connect() {
     var proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
     ws = new WebSocket(proto + location.host + '/ws?role=tv');
-    ws.onopen = function () {
-      dot.className = 'on'; idleText.textContent = 'Conectado ao PC. Aguardando...';
-      connected = true; flashBadge();
-    };
+    ws.onopen = function () { setConnected(true); };
     ws.onmessage = function (e) {
       var d; try { d = JSON.parse(e.data); } catch (x) { return; }
       if (d.type === 'state') apply(d.state);
@@ -240,13 +248,9 @@
       else if (d.type === 'bg') { applyBg(d.bg); updateBgVisibility(); }
       else if (d.type === 'lyrics') { setLyrics(d.text, d.size); updateBgVisibility(); }
       else if (d.type === 'css') setCss(d.css);
-      else if (d.type === 'badge') setBadgeMode(d.mode);
+      else if (d.type === 'badge') setMarkMode(d.mode);
     };
-    ws.onclose = function () {
-      dot.className = ''; idleText.textContent = 'Procurando o PC...';
-      connected = false; renderBadge();
-      setTimeout(connect, 2000);
-    };
+    ws.onclose = function () { setConnected(false); setTimeout(connect, 2000); };
     ws.onerror = function () { try { ws.close(); } catch (e) {} };
   }
 
@@ -257,7 +261,8 @@
     }
   }, 1000);
 
-  renderBadge();
+  window.TVCAST = { apply: apply, setConnected: setConnected, setMarkMode: setMarkMode };   // para testes/depuração
+  renderMark();
   connect();
 })();
 </script>

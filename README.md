@@ -34,10 +34,11 @@ Igual ao que você já faz com o Reaper Remote:
 8. **CSS personalizado**: o campo do painel vale para a página da web (no app da TV) e para a letra (`#lyr` e `#lyrIn`). Fica salvo em `settings.json`.
 9. Controle remoto da TV: **VOLTAR** na projeção volta para a tela de IP.
 
-## App da TV (versão 1.2)
+## App da TV (versão 1.3)
 
 - **Acha o PC sozinho**: ao abrir, o app procura o PC na rede (UDP, porta 8766) e conecta sem digitar IP. Se o IP do PC mudar, ele reencontra. Se o Firewall perguntar, permita em redes privadas.
-- **Selo "TV CAST" + status** na parte de baixo: aparece por 5 s ao conectar e fica visível se a conexão cair. No painel dá para deixar "Sempre visível" ou "Nunca" (importante em apresentação ao vivo).
+- **Marca d'água (logo)** no canto inferior direito: no painel, "Até Conectar" (some quando conecta), "Sempre" ou "Nunca" (importante em apresentação ao vivo). A tela de espera mostra a logo grande e o status ("Procurando o PC..." / "Conectado ao PC").
+- **Novo visual** (Figma): tema escuro com variáveis de cor em `:root`, fonte Inter (licença OFL, em `web/assets/fonts`), logo em `web/assets`.
 - Se a TV ficar sem memória e o navegador interno cair, o app se reabre sozinho. A tela de páginas da web só usa memória enquanto uma página está projetada.
 
 ## Se o vídeo ou a tela engasgar
