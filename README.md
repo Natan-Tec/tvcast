@@ -56,7 +56,8 @@ A janela é capturada diretamente (Windows Graphics Capture): pode ficar atrás 
 
 ## Limitações
 
-- **Tela e janela vão sem áudio** (é um fluxo de imagens). Vídeo de arquivo toca com áudio.
+- **Tela e janela vão sem áudio** (é um fluxo de imagens).
+- **Vídeo de arquivo: o som sai no PC** (opção "Som no PC", ligada por padrão, no player do painel). A TV toca o vídeo mudo e o painel toca o áudio, acompanhando a posição da TV (pausar, avançar e volume funcionam normal). Se o som ficar adiantado ou atrasado em relação à imagem, use o campo **Ajuste (ms)**: valor positivo atrasa o som, negativo adianta. Desmarque "Som no PC" para o som sair na TV. O painel precisa ficar aberto (pode ficar em segundo plano) e já ter recebido um clique para o navegador liberar o som.
 - **Vídeo**: a TV toca o que o WebView dela suporta (MP4 H.264, WebM). MKV/AVI podem falhar; a TV avisa na tela.
 - Atraso típico de 0,2 a 0,5 s na tela. Se travar, escolha qualidade **Leve** no painel.
 - O painel só abre no próprio PC. Para liberar para o celular: variável `TVCAST_ALLOW_REMOTE=1`.

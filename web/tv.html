@@ -200,6 +200,7 @@
       setIdle(false); show(img, true); img.src = s.url;
     } else if (s.mode === 'video') {
       setIdle(false); show(vid, true);
+      vid.muted = !!s.pc_audio;      // som sai no PC
       vid.src = s.url;
       var p = vid.play();
       if (p && p.catch) p.catch(function () { vid.muted = true; vid.play(); });
@@ -222,6 +223,7 @@
     }
     if (cur.mode !== 'video') return;
     var a = c.action, v = Number(c.value);
+    if (cur.pc_audio && (a === 'volume' || a === 'mute')) return;   // volume é do PC
     if (a === 'play') vid.play();
     else if (a === 'pause') vid.pause();
     else if (a === 'toggle') { if (vid.paused) vid.play(); else vid.pause(); }
@@ -249,6 +251,7 @@
       else if (d.type === 'lyrics') { setLyrics(d.text, d.size); updateBgVisibility(); }
       else if (d.type === 'css') setCss(d.css);
       else if (d.type === 'badge') setMarkMode(d.mode);
+      else if (d.type === 'pcaudio') { cur.pc_audio = !!d.value; if (cur.mode === 'video') vid.muted = cur.pc_audio; }
     };
     ws.onclose = function () { setConnected(false); setTimeout(connect, 2000); };
     ws.onerror = function () { try { ws.close(); } catch (e) {} };

@@ -57,6 +57,7 @@ state = {
     "css": "",             # CSS personalizado (página + letra)
     "badge": "auto",       # selo TV CAST + status na TV: auto | always | never
     "wmethod": "direct",   # captura de janela: direct (estilo OBS) | region (cópia da tela, mais leve)
+    "pc_audio": True,      # som do vídeo sai no PC (a TV toca o vídeo mudo)
 }
 FILES = {}                 # id -> Path (só o que foi escolhido no painel é servido)
 clients = {"tv": set(), "panel": set()}
@@ -404,6 +405,7 @@ def load_settings():
     state["css"] = str(d.get("css", ""))
     state["badge"] = d.get("badge") if d.get("badge") in ("auto", "always", "never") else "auto"
     state["wmethod"] = d.get("wmethod") if d.get("wmethod") in ("direct", "region") else "direct"
+    state["pc_audio"] = bool(d.get("pc_audio", True))
     RECENT_URLS[:] = [u for u in d.get("urls", []) if isinstance(u, str)][:10]
 
 
@@ -411,7 +413,8 @@ def save_settings():
     try:
         SETTINGS_FILE.write_text(
             json.dumps({"css": state["css"], "urls": RECENT_URLS, "badge": state["badge"],
-                        "wmethod": state["wmethod"]}, ensure_ascii=False, indent=1),
+                        "wmethod": state["wmethod"], "pc_audio": state["pc_audio"]},
+                       ensure_ascii=False, indent=1),
             encoding="utf-8")
     except Exception as e:
         print("Não consegui salvar settings.json:", e)
@@ -484,6 +487,7 @@ def tv_state():
     s["css"] = state["css"]
     s["badge"] = state["badge"]
     s["page"] = state["page"] if m == "url" else ""
+    s["pc_audio"] = state["pc_audio"]
     return s
 
 
@@ -513,6 +517,8 @@ async def push_status():
         "bg_name": state["bg"]["name"] if state["bg"] else "",
         "bg_muted": state["bg"]["muted"] if state["bg"] else True,
         "bg_url": (bg_payload() or {}).get("url", ""),
+        "pc_audio": state["pc_audio"],
+        "video_url": tv_state().get("url", "") if state["mode"] == "video" else "",
     })
 
 
@@ -895,6 +901,16 @@ async def api_wmethod(request):
     return web.json_response({"ok": True})
 
 
+async def api_pcaudio(request):
+    """Som do vídeo no PC: a TV toca mudo e o painel toca o áudio, sincronizado."""
+    d = await request.json()
+    state["pc_audio"] = bool(d.get("value"))
+    save_settings()
+    await broadcast("tv", {"type": "pcaudio", "value": state["pc_audio"]})
+    await push_status()
+    return web.json_response({"ok": True})
+
+
 async def api_settings(request):
     return web.json_response({"css": state["css"], "urls": RECENT_URLS, "badge": state["badge"],
                              "wmethod": state["wmethod"]})
@@ -933,6 +949,7 @@ def make_app():
         web.post("/api/css", api_css),
         web.post("/api/badge", api_badge),
         web.post("/api/wmethod", api_wmethod),
+        web.post("/api/pcaudio", api_pcaudio),
         web.get("/api/settings", api_settings),
     ])
     return app

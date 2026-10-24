@@ -255,6 +255,12 @@
               <input type="range" id="vol" min="0" max="100" value="100">
               <button class="btn sm" id="bMute">Mudo</button>
             </div>
+            <div class="ctl" style="margin-top:10px">
+              <label class="opt chk"><input type="checkbox" id="pcAudio"><i></i>Som no PC (a TV fica muda)</label>
+              <span class="time" style="min-width:0;margin-left:14px">Ajuste</span>
+              <input type="number" id="pcOff" value="0" step="50" min="-1500" max="1500" style="width:78px" title="Atrasa (+) ou adianta (-) o som do PC em milissegundos, para casar com a imagem da TV">
+              <span class="time" style="min-width:0">ms</span>
+            </div>
           </div>
         </div>
       </div>
@@ -449,8 +455,44 @@ function setFill(el, pct) { el.style.setProperty('--p', Math.max(0, Math.min(100
 $('#bPlay').onclick = function () { ctrl('toggle'); };
 $('#bBack').onclick = function () { ctrl('skip', -10); };
 $('#bFwd').onclick = function () { ctrl('skip', 10); };
-$('#bMute').onclick = function () { ctrl('mute'); };
-$('#vol').oninput = function () { setFill(this, this.value); ctrl('volume', this.value / 100); };
+$('#bMute').onclick = function () { if (st.pc_audio) { pcMute = !pcMute; syncPcAudio(); render(); } else ctrl('mute'); };
+$('#vol').oninput = function () {
+  setFill(this, this.value);
+  if (st.pc_audio) { pcVol = this.value / 100; pcMute = false; syncPcAudio(); } else ctrl('volume', this.value / 100);
+};
+$('#pcAudio').onchange = function () { api('/api/pcaudio', { value: this.checked }); };
+$('#pcOff').onchange = function () {
+  pcOff = Number(this.value) || 0;
+  try { localStorage.setItem('pcOff', String(pcOff)); } catch (e) {}
+  syncPcAudio();
+};
+
+/* ---------- som do vídeo no PC (a TV toca muda; este painel toca o áudio, no tempo da TV) ---------- */
+var pcVol = 1, pcMute = false, pcOff = 0;
+try { pcOff = Number(localStorage.getItem('pcOff')) || 0; $('#pcOff').value = pcOff; } catch (e) {}
+var pcEl = document.createElement('video');
+pcEl.preload = 'auto'; pcEl.style.display = 'none'; document.body.appendChild(pcEl);
+function syncPcAudio() {
+  var p = st.progress || {};
+  if (!(st.pc_audio && st.mode === 'video' && st.video_url)) {
+    if (pcEl.getAttribute('data-u')) { pcEl.pause(); pcEl.removeAttribute('src'); pcEl.removeAttribute('data-u'); pcEl.load(); }
+    return;
+  }
+  if (pcEl.getAttribute('data-u') !== st.video_url) { pcEl.setAttribute('data-u', st.video_url); pcEl.src = st.video_url; }
+  pcEl.volume = pcVol; pcEl.muted = pcMute;
+  if (p.t === undefined) return;
+  var target = Math.max(0, p.t + pcOff / 1000);
+  if (p.paused) {
+    if (!pcEl.paused) pcEl.pause();
+    if (Math.abs(pcEl.currentTime - target) > 0.2) pcEl.currentTime = target;
+  } else {
+    if (Math.abs(pcEl.currentTime - target) > 0.35) pcEl.currentTime = target;
+    if (pcEl.paused) {
+      var pr = pcEl.play();
+      if (pr && pr.catch) pr.catch(function () { toast('Clique em qualquer lugar do painel para liberar o som no PC.'); });
+    }
+  }
+}
 $('#seek').onmousedown = function () { seeking = true; };
 $('#seek').oninput = function () { setFill(this, this.value / 10); };
 $('#seek').onchange = function () { var d = (st.progress && st.progress.d) || 0; ctrl('seek', (this.value / 1000) * d); seeking = false; };
@@ -578,7 +620,10 @@ function render() {
     else pv.textContent = 'Nenhum fundo definido';
   }
   renderSources(); renderMedia();
-  setFill($('#vol'), (p.volume === undefined ? 1 : p.volume) * 100);
+  if (document.activeElement !== $('#pcAudio')) $('#pcAudio').checked = !!st.pc_audio;
+  $('#bMute').textContent = (st.pc_audio ? pcMute : p.volume === 0) ? 'Som' : 'Mudo';
+  setFill($('#vol'), (st.pc_audio ? (pcMute ? 0 : pcVol) : (p.volume === undefined ? 1 : p.volume)) * 100);
+  syncPcAudio();
 }
 
 function connect() {
