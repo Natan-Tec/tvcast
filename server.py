@@ -273,7 +273,7 @@ class WindowGrabber:
     def snapshot(self):
         """(jpeg, número do quadro). Codifica no ritmo do preset; devolve o último se nada mudou."""
         width, quality, fps = PRESETS[state["quality"]]
-        fps = max(fps, 15)   # letra/slide: troca rara, então codificar até 15/s custa pouco e reduz o atraso
+        fps = max(fps, 25)   # letra/slide: troca rara, então codificar até 25/s custa pouco e reduz o atraso
         with self.lock:
             raw, rseq = self.raw, self.raw_seq
         if raw is None or rseq == self.enc_seq or time.time() - self.t_enc < 1.0 / fps:
